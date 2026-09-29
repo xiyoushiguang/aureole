@@ -1,0 +1,175 @@
+import SwiftUI
+import AureoleCore
+
+struct SettingsView: View {
+    @ObservedObject var settings: SettingsStore
+    @ObservedObject var store: UsageStore
+
+    var body: some View {
+        TabView {
+            GeneralTab(settings: settings).tabItem { Label(L10n.t("General"), systemImage: "gearshape") }
+            ProvidersTab(settings: settings, store: store).tabItem { Label(L10n.t("Providers"), systemImage: "person.2") }
+            ChannelsTab(settings: settings, store: store).tabItem { Label(L10n.t("Notifications"), systemImage: "bell") }
+        }
+        .frame(minWidth: 560, minHeight: 460)
+        .padding(12)
+        .id(settings.language)
+    }
+}
+
+struct GeneralTab: View {
+    @ObservedObject var settings: SettingsStore
+
+    var body: some View {
+        Form {
+            Picker(L10n.t("Language"), selection: $settings.language) {
+                ForEach(Language.allCases, id: \.self) { Text($0.displayName).tag($0) }
+            }
+            Picker(L10n.t("Panel background"), selection: $settings.panelStyle) {
+                ForEach(PanelStyle.allCases, id: \.self) { Text($0.displayName).tag($0) }
+            }
+            if settings.panelStyle == .glass {
+                Text(L10n.t("Liquid Glass needs macOS 26; older systems get a frosted material instead."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Picker(L10n.t("Refresh every (when busy)"), selection: $settings.refreshInterval) {
+                Text(L10n.t("30 s")).tag(30.0)
+                Text(L10n.t("1 min")).tag(60.0)
+                Text(L10n.t("2 min")).tag(120.0)
+                Text(L10n.t("5 min")).tag(300.0)
+            }
+            Text(L10n.t("Slows down to 5 min automatically while nothing changes."))
+                .font(.caption).foregroundStyle(.secondary)
+            Stepper(L10n.f("Warn at %d%%", settings.thresholdWarn), value: $settings.thresholdWarn, in: 50...94, step: 5)
+            Stepper(L10n.f("Critical at %d%%", settings.thresholdCritical), value: $settings.thresholdCritical, in: 80...100, step: 5)
+            Toggle(L10n.t("Suggest routing work to the provider with headroom"), isOn: $settings.routingHints)
+            Toggle(L10n.t("macOS notifications"), isOn: $settings.nativeNotifications)
+            Text(L10n.f("Version %@ · log at %@", AureoleInfo.version, "~/Library/Logs/Aureole/aureole.log"))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .formStyle(.grouped)
+    }
+}
+
+struct ProvidersTab: View {
+    @ObservedObject var settings: SettingsStore
+    @ObservedObject var store: UsageStore
+
+    var body: some View {
+        Form {
+            Section("Claude") {
+                Toggle(L10n.t("Track Claude (Claude Code sign-in)"), isOn: $settings.claudeEnabled)
+                Picker(L10n.t("Read Keychain via"), selection: $settings.claudeCredentialSource) {
+                    Text(L10n.t("security CLI (one-time Always Allow)")).tag(ClaudeCredentialSource.securityCLI)
+                    Text(L10n.t("Keychain API")).tag(ClaudeCredentialSource.secItem)
+                }
+                statusLine(.claude)
+            }
+            Section("Codex") {
+                Toggle(L10n.t("Track Codex (~/.codex/auth.json)"), isOn: $settings.codexEnabled)
+                statusLine(.codex)
+            }
+            Section {
+                Text(L10n.t("Aureole only reads tokens that Claude Code and Codex CLI already store. It never refreshes or writes them, and it only talks to each vendor's own usage endpoint."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private func statusLine(_ id: ProviderID) -> some View {
+        let text: String
+        switch store.status[id] {
+        case .ok?: text = L10n.t("Connected") + (store.snapshots[id]?.planLabel.map { " · \($0)" } ?? "")
+        case .loading?: text = L10n.t("Loading…")
+        case .rateLimited?: text = L10n.t("Rate limited")
+        case .signedOut(let m)?, .error(let m)?: text = m
+        default: text = settings.isEnabled(id) ? L10n.t("Waiting…") : L10n.t("Off")
+        }
+        return LabeledContent(L10n.t("Status")) { Text(text).foregroundStyle(.secondary).textSelection(.enabled) }
+    }
+}
+
+struct ChannelsTab: View {
+    @ObservedObject var settings: SettingsStore
+    @ObservedObject var store: UsageStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Menu(L10n.t("Add channel")) {
+                    ForEach(ChannelKind.allCases.filter { $0 != .native }) { kind in
+                        Button(kind.displayName) { settings.channels.append(ChannelConfig(kind: kind)) }
+                    }
+                }
+                .fixedSize()
+                Spacer()
+                if let err = store.lastChannelError {
+                    Text(err).font(.caption).foregroundStyle(.orange).lineLimit(1)
+                }
+            }
+            if settings.channels.isEmpty {
+                Text(L10n.t("Events: warn/critical thresholds, window reset, ‘runs out before reset’ forecast, sign-in lost. Add a channel to receive them outside macOS."))
+                    .font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 8)
+            }
+            ScrollView {
+                VStack(spacing: 10) {
+                    ForEach($settings.channels) { $channel in
+                        ChannelEditor(channel: $channel,
+                                      onTest: { store.sendTest(to: channel) },
+                                      onDelete: { settings.channels.removeAll { $0.id == channel.id } })
+                    }
+                }
+            }
+        }
+        .padding(.top, 6)
+    }
+}
+
+struct ChannelEditor: View {
+    @Binding var channel: ChannelConfig
+    var onTest: () -> Void
+    var onDelete: () -> Void
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Toggle("", isOn: $channel.enabled).labelsHidden()
+                    TextField(L10n.t("Name"), text: $channel.name).textFieldStyle(.plain).font(.headline)
+                    Spacer()
+                    Text(channel.kind.displayName).font(.caption).foregroundStyle(.secondary)
+                    Button(L10n.t("Test"), action: onTest)
+                    Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }
+                }
+                Text(channel.kind.hint).font(.caption).foregroundStyle(.secondary)
+                ForEach(channel.kind.fields, id: \.self) { field in
+                    switch field {
+                    case .url: TextField(channel.kind == .ntfy ? L10n.t("Topic URL") : L10n.t("Webhook URL"), text: $channel.url)
+                    case .token: SecureField(channel.kind == .telegram ? L10n.t("Bot token") : L10n.t("Key"), text: $channel.token)
+                    case .target: TextField(channel.kind == .shell ? L10n.t("Script path") : L10n.t("Chat id"), text: $channel.target)
+                    case .headers: TextField(L10n.t("Extra headers (Key: Value; Key2: Value2)"), text: headersBinding)
+                    case .body: TextField(L10n.t("JSON body template"), text: $channel.bodyTemplate, axis: .vertical).lineLimit(2...4)
+                    }
+                }
+            }
+            .textFieldStyle(.roundedBorder)
+        }
+    }
+
+    private var headersBinding: Binding<String> {
+        Binding(
+            get: { channel.headers.map { "\($0.key): \($0.value)" }.sorted().joined(separator: "; ") },
+            set: { text in
+                var out: [String: String] = [:]
+                for pair in text.split(separator: ";") {
+                    let kv = pair.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+                    if kv.count == 2, !kv[0].isEmpty { out[kv[0]] = kv[1] }
+                }
+                channel.headers = out
+            }
+        )
+    }
+}
