@@ -1,14 +1,16 @@
 #!/bin/bash
 # Builds Aureole.app (ad-hoc signed) into build/. Usage: scripts/build-app.sh [debug|release]
+# Set OUT_DIR to build the bundle somewhere else (scripts/package.sh does, to leave build/ alone).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 CONFIG="${1:-release}"
+OUT_DIR="${OUT_DIR:-build}"
 VERSION="$(cat VERSION)"
 BUILD_NO="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 swift build -c "$CONFIG" --product Aureole
 BIN=".build/$CONFIG/Aureole"
-APP="build/Aureole.app"
-mkdir -p build
+APP="$OUT_DIR/Aureole.app"
+mkdir -p "$OUT_DIR"
 # Move any previous bundle aside instead of deleting it in place.
 if [ -e "$APP" ]; then mv "$APP" "$(mktemp -d "${TMPDIR:-/tmp}/aureole-stale.XXXXXX")/"; fi
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
