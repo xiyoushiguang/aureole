@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Aureole app icon, "J · 晨昏线": a planet's limb lit at dawn, the notch above it. 1024 grid, 824 tile. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs>
+<linearGradient id="tile" gradientUnits="userSpaceOnUse" x1="0" y1="100" x2="0" y2="924">
+<stop offset="0" stop-color="#04050A"/>
+<stop offset="0.6" stop-color="#070B18"/>
+<stop offset="1" stop-color="#0B1428"/>
+</linearGradient>
+<clipPath id="clip"><rect x="100" y="100" width="824" height="824" rx="186"/></clipPath>
+<linearGradient id="atm" gradientUnits="userSpaceOnUse" x1="100" y1="0" x2="924" y2="0">
+<stop offset="0" stop-color="#DE7D5C"/>
+<stop offset="0.55" stop-color="#FFBA52"/>
+<stop offset="1" stop-color="#6BCCB8"/>
+</linearGradient>
+<linearGradient id="planet" gradientUnits="userSpaceOnUse" x1="0" y1="600" x2="0" y2="924">
+<stop offset="0" stop-color="#070A16"/>
+<stop offset="1" stop-color="#020308"/>
+</linearGradient>
+<filter id="far" filterUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024"><feGaussianBlur stdDeviation="36"/></filter>
+<filter id="near" filterUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024"><feGaussianBlur stdDeviation="11"/></filter>
+</defs>
+<rect x="0" y="0" width="1024" height="1024" fill="url(#tile)"/>
+<g clip-path="url(#clip)">
+<circle cx="512" cy="1500" r="900" fill="none" stroke="url(#atm)" stroke-width="90" opacity="0.9" filter="url(#far)"/>
+<circle cx="512" cy="1500" r="900" fill="none" stroke="url(#atm)" stroke-width="30" filter="url(#near)"/>
+<circle cx="650" cy="611" r="60" fill="#FFD9A0" opacity="0.85" filter="url(#near)"/>
+<circle cx="512" cy="1500" r="900" fill="url(#planet)"/>
+<circle cx="512" cy="1500" r="900" fill="none" stroke="url(#atm)" stroke-width="8"/>
+<circle cx="650" cy="610" r="14" fill="#FFFFFF"/>
+<path d="M 352 100 H 672 V 192 A 44 44 0 0 1 628 236 H 396 A 44 44 0 0 1 352 192 Z" fill="#000000"/>
+<g filter="url(#near)">
+<line x1="388" y1="226" x2="500" y2="226" stroke="#DE7D5C" stroke-width="14" stroke-linecap="round"/>
+<line x1="524" y1="226" x2="636" y2="226" stroke="#6BCCB8" stroke-width="14" stroke-linecap="round"/>
+</g>
+<line x1="388" y1="226" x2="500" y2="226" stroke="#EE8E6C" stroke-width="7" stroke-linecap="round"/>
+<line x1="524" y1="226" x2="636" y2="226" stroke="#7FDCC9" stroke-width="7" stroke-linecap="round"/>
+</g>
+<rect x="101.5" y="101.5" width="821" height="821" rx="184.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="3"/>
+</svg>

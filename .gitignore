@@ -5,3 +5,5 @@ dist/
 .DS_Store
 .swiftpm/
 Package.resolved
+design/icon/preview/
+design/icon-candidates/
