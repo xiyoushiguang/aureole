@@ -60,6 +60,11 @@ struct HorizonPanel: View {
     let pinned: Bool
     weak var actions: AppActions?
     @State private var lanesHeight: CGFloat = 0
+    /// The session whose details card is showing: set by hovering its lane, kept while the card is hovered.
+    /// `open Aureole.app --args -debugFocusLane <session id>` starts with one card up, for screenshots.
+    @State private var focus: String? = UserDefaults.standard.string(forKey: "debugFocusLane")
+    @State private var hoveredLane: String?
+    @State private var hoveringCard = false
 
     static let laneHeight: CGFloat = 52
 
@@ -80,11 +85,18 @@ struct HorizonPanel: View {
         VStack(spacing: 0) {
             ZStack(alignment: .topLeading) {
                 HorizonCanvas(scene: scene)
-                HorizonHeadlineView(inputs: inputs, store: store)
-                    .padding(.leading, 28).padding(.top, 8)
-                SideNumber(inputs: inputs, store: store)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .padding(.trailing, 28).padding(.top, 10)
+                HStack(alignment: .top, spacing: 16) {
+                    // The waiting capsule sits under the conclusion, in the sky left of "now", which is otherwise empty.
+                    VStack(alignment: .leading, spacing: 12) {
+                        HorizonHeadlineView(inputs: inputs, store: store)
+                        if !board.waiting.isEmpty {
+                            WaitingCapsule(waiting: board.waiting, name: sessions.name(of:), actions: actions)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    SideNumber(inputs: inputs, store: store).fixedSize().padding(.top, 2)
+                }
+                .padding(.horizontal, 28).padding(.top, 8)
             }
             .frame(width: width, height: scene.layout.height * s)
 
@@ -94,6 +106,36 @@ struct HorizonPanel: View {
         .background(alignment: .bottom) {
             // The planet's night side carries on under the lanes and the footer.
             HorizonColor.ground.padding(.top, scene.layout.height * s - 1)
+        }
+        .overlay(alignment: .topTrailing) {
+            if let id = focus, let lane = scene.lanes.first(where: { $0.id == id }) {
+                SessionCard(session: lane.session, name: sessions.name(of: lane.session), context: sessions.context[id], actions: actions)
+                    .frame(width: 318)
+                    .onHover { inside in
+                        hoveringCard = inside
+                        if !inside { scheduleBlur() }
+                    }
+                    .padding(.trailing, 28).padding(.top, 84 * s)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: focus)
+    }
+
+    private func laneHover(_ id: String, _ inside: Bool) {
+        if inside {
+            hoveredLane = id
+            focus = id
+        } else {
+            if hoveredLane == id { hoveredLane = nil }
+            scheduleBlur()
+        }
+    }
+
+    /// Leaves the card up long enough to move the pointer onto it.
+    private func scheduleBlur() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            if hoveredLane == nil && !hoveringCard { focus = nil }
         }
     }
 
@@ -118,7 +160,7 @@ struct HorizonPanel: View {
                 VStack(spacing: 0) {
                     ForEach(scene.lanes) { lane in
                         LaneRow(scene: scene, lane: lane, scale: s, name: sessions.name(of: lane.session),
-                                context: sessions.context[lane.id], actions: actions)
+                                context: sessions.context[lane.id], actions: actions, onHover: { laneHover(lane.id, $0) })
                             .frame(height: Self.laneHeight)
                     }
                 }
@@ -361,6 +403,7 @@ struct LaneRow: View {
     let name: String
     let context: Int?
     weak var actions: AppActions?
+    var onHover: (Bool) -> Void = { _ in }
     @State private var hovered = false
 
     var body: some View {
@@ -398,8 +441,7 @@ struct LaneRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { hovered = $0 }
-        .help(tooltip(s))
+        .onHover { hovered = $0; onHover($0) }
     }
 
     @ViewBuilder
@@ -439,14 +481,6 @@ struct LaneRow: View {
         if let context { parts.append(L10n.f("context %d%%", Int((context * 100).rounded()))) }
         return parts.joined(separator: " · ")
     }
-
-    private func tooltip(_ s: AgentSession) -> String {
-        var lines = [(s.cwd as NSString).abbreviatingWithTildeInPath]
-        if let p = s.promptPreview, !p.isEmpty { lines.append(L10n.t("Prompt") + ": " + p) }
-        for a in s.recent ?? [] { lines.append(SessionText.ago(a.at) + "  " + a.text) }
-        if let context { lines.append(L10n.t("Context") + ": " + TranscriptReader.short(context)) }
-        return lines.joined(separator: "\n")
-    }
 }
 
 /// One session's light: a context ring around a coloured core, an amber halo when it needs you.
@@ -481,6 +515,110 @@ struct SessionLight: View {
         .onAppear {
             guard lane.role == .waiting else { return }
             withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { pulse = true }
+        }
+    }
+}
+
+// MARK: - Waiting and details
+
+/// "Needs you 2" with one button per waiting session; a click jumps to its terminal.
+struct WaitingCapsule: View {
+    let waiting: [AgentSession]
+    let name: (AgentSession) -> String
+    weak var actions: AppActions?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle().fill(Theme.amber).frame(width: 8, height: 8).shadow(color: Theme.amber.opacity(0.9), radius: 4)
+            Text(L10n.f("Needs you %d", waiting.count))
+                .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.amber).fixedSize()
+            ForEach(waiting.prefix(2)) { s in
+                Button { actions?.jump(to: s) } label: {
+                    Text(SessionText.short(name(s)) + " ›")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+                        .padding(.horizontal, 11).frame(height: 26)
+                        .background(Capsule().fill(Theme.amber.opacity(0.22)))
+                }
+                .buttonStyle(.plain)
+                .help(s.waitingMessage ?? s.cwd)
+            }
+            if waiting.count > 2 {
+                Text("+\(waiting.count - 2)").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Theme.amber)
+            }
+        }
+        .padding(.leading, 14).padding(.trailing, 7)
+        .frame(height: 38)
+        .background(Capsule().fill(Theme.amber.opacity(0.16)))
+        .fixedSize()
+    }
+}
+
+/// Details for one session; appears while its lane (or the card itself) is hovered.
+struct SessionCard: View {
+    let session: AgentSession
+    let name: String
+    let context: Int?
+    weak var actions: AppActions?
+
+    var body: some View {
+        let s = session
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Circle().fill(SessionText.dot(s)).frame(width: 8, height: 8)
+                Text(name).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+                Spacer(minLength: 4)
+                if s.state.needsYou {
+                    Text(SessionText.waitStatus(s))
+                        .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Color(hex: 0x1A1305))
+                        .padding(.horizontal, 8).padding(.vertical, 2)
+                        .background(Capsule().fill(Theme.amber))
+                        .fixedSize()
+                }
+            }
+            if let m = s.waitingMessage { row(L10n.t("Requesting"), m, mono: true) }
+            if let p = s.promptPreview, !p.isEmpty { row(L10n.t("Prompt"), p) }
+            if let recent = s.recent, !recent.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(recent.enumerated()), id: \.offset) { _, a in row(SessionText.ago(a.at), a.text) }
+                }
+            }
+            if let context {
+                let f = ContextGauge.fraction(tokens: context)
+                HStack(spacing: 10) {
+                    Text(L10n.t("Context")).font(.system(size: 11)).foregroundStyle(HorizonColor.label).frame(width: 52, alignment: .leading)
+                    GeometryReader { g in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.white.opacity(0.12))
+                            Capsule().fill(Color.white.opacity(0.75)).frame(width: g.size.width * f)
+                        }
+                    }
+                    .frame(height: 4)
+                    Text("\(Int((f * 100).rounded()))% · \(TranscriptReader.short(context))")
+                        .font(.system(size: 11).monospacedDigit()).foregroundStyle(.white.opacity(0.86)).fixedSize()
+                }
+                .help(L10n.t("Context %% is an estimate (200k or 1M window)."))
+            }
+            row(L10n.t("Folder"), (s.cwd as NSString).abbreviatingWithTildeInPath)
+            Button { actions?.jump(to: s) } label: {
+                Text(L10n.t("Jump to terminal"))
+                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(.black)
+                    .padding(.horizontal, 16).frame(height: 30)
+                    .background(Capsule().fill(Color.white))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 14)
+        .background(RoundedRectangle(cornerRadius: 16).fill(Color(hex: 0x12141B).opacity(0.97)))
+        .overlay(RoundedRectangle(cornerRadius: 16)
+            .stroke(s.state.needsYou ? Theme.amber.opacity(0.45) : Color.white.opacity(0.14), lineWidth: 1))
+        .shadow(color: .black.opacity(0.5), radius: 18, y: 8)
+    }
+
+    private func row(_ key: String, _ value: String, mono: Bool = false) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(key).font(.system(size: 11)).foregroundStyle(HorizonColor.label).frame(width: 52, alignment: .leading)
+            Text(value).font(mono ? .system(size: 11, design: .monospaced) : .system(size: 11))
+                .foregroundStyle(.white.opacity(0.86)).lineLimit(2)
         }
     }
 }
