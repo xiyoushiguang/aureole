@@ -30,7 +30,10 @@ to see the numbers.
 
 ## Install
 
-Requires macOS 14 or later. Apple silicon and Intel.
+Requires macOS 14 or later on Apple silicon. A universal build for Intel compiles with
+`UNIVERSAL=1 scripts/build-app.sh` but has not been tested on Intel hardware.
+
+### Build from source
 
 ```bash
 git clone https://github.com/qianqianob/aureole.git
@@ -39,8 +42,17 @@ scripts/build-app.sh          # → build/Aureole.app
 open build/Aureole.app
 ```
 
-Builds are ad-hoc signed for now, so the first launch needs a right-click → Open. Signed and
-notarized releases (and a Homebrew tap) will follow once the developer certificate is in place.
+An app you build yourself is not quarantined, so it opens directly.
+
+### Download a release
+
+Grab `Aureole-<version>.dmg` from the Releases page and drag Aureole to Applications.
+
+Release builds are ad-hoc signed for now, not notarized, so macOS blocks the first launch. On
+macOS 15 and later, right-click → Open no longer gets past this: open Aureole once, dismiss the
+warning, then go to **System Settings → Privacy & Security** and click **Open Anyway**. On macOS 14,
+right-click → Open still works. Signed and notarized releases (and a Homebrew tap) will follow once
+the developer certificate is in place.
 
 ## How it reads your usage
 
