@@ -119,11 +119,15 @@ struct OpenNotchView: View {
             header.frame(height: notchH)
             VStack(spacing: 10) {
                 if settings.sessionsEnabled, !sessions.board.waiting.isEmpty {
-                    WaitingRow(waiting: sessions.board.waiting, actions: actions)
+                    WaitingRow(waiting: sessions.board.waiting, name: sessions.name(of:), actions: actions)
                     Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
                 }
                 ForEach(enabledProviders) { provider in
                     ProviderRow(provider: provider, store: store)
+                }
+                if settings.sessionsEnabled, !model.expanded, !(sessions.board.working.isEmpty && sessions.board.idle.isEmpty) {
+                    Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+                    SessionsRow(board: sessions.board, name: sessions.name(of:), actions: actions)
                 }
                 if model.expanded {
                     Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)

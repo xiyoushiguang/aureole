@@ -35,6 +35,8 @@ public struct AgentSession: Codable, Equatable, Identifiable, Sendable {
     public var waitingMessage: String?
     public var promptPreview: String?
     public var turns: Int = 0
+    /// The last few tool calls, newest first. Optional so files written by older helpers still decode.
+    public var recent: [SessionActivity]?
 
     public var id: String { sessionId }
     public var projectName: String { (cwd as NSString).lastPathComponent }
@@ -53,6 +55,12 @@ public struct AgentSession: Codable, Equatable, Identifiable, Sendable {
         if state != new { stateSince = now }
         state = new
     }
+}
+
+public struct SessionActivity: Codable, Equatable, Sendable {
+    public var at: Date
+    public var text: String
+    public init(at: Date, text: String) { self.at = at; self.text = text }
 }
 
 /// A hook invocation, decoded from the JSON Claude Code writes to the hook's stdin.
@@ -105,6 +113,10 @@ public enum SessionReducer {
         case "PreToolUse":
             s.lastTool = e.toolName
             s.lastDetail = Self.detail(tool: e.toolName, input: e.toolInput)
+            if let tool = e.toolName {
+                let text = [tool, s.lastDetail].compactMap { $0 }.joined(separator: " · ")
+                s.recent = Array(([SessionActivity(at: now, text: text)] + (s.recent ?? [])).prefix(3))
+            }
             if e.toolName == "AskUserQuestion" {
                 s.set(.waitingInput, at: now)
                 s.waitingMessage = s.lastDetail
@@ -308,5 +320,59 @@ public enum HookInstaller {
         try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let data = try JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         try data.write(to: url, options: .atomic)
+    }
+}
+
+/// Reads a session's title and context size from the tail of its Claude Code transcript.
+public enum TranscriptReader {
+    public struct Summary: Equatable, Sendable {
+        /// Tokens the model saw on its latest main-thread turn (input + cache writes + cache reads).
+        public var contextTokens: Int?
+        /// The short title Claude Code generates for the conversation.
+        public var title: String?
+        public init(contextTokens: Int? = nil, title: String? = nil) { self.contextTokens = contextTokens; self.title = title }
+    }
+
+    public static func summary(inTail text: Substring) -> Summary {
+        var out = Summary()
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
+            if out.contextTokens != nil, out.title != nil { break }
+            if out.title == nil, line.contains("\"ai-title\""),
+               let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+               obj["type"] as? String == "ai-title", let t = obj["aiTitle"] as? String, !t.isEmpty {
+                out.title = t
+                continue
+            }
+            if out.contextTokens == nil, line.contains("\"usage\""), line.contains("\"assistant\""),
+               let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+               obj["type"] as? String == "assistant", (obj["isSidechain"] as? Bool) != true,
+               let usage = (obj["message"] as? [String: Any])?["usage"] as? [String: Any] {
+                func n(_ k: String) -> Int { (usage[k] as? NSNumber)?.intValue ?? 0 }
+                let total = n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens")
+                if total > 0 { out.contextTokens = total }
+            }
+        }
+        return out
+    }
+
+    public static func contextTokens(inTail text: Substring) -> Int? { summary(inTail: text).contextTokens }
+
+    /// Looks only at the last few megabytes; transcripts grow to tens of MB.
+    public static func summary(path: String, tailBytes: UInt64 = 3 << 20) -> Summary {
+        guard let h = FileHandle(forReadingAtPath: path) else { return Summary() }
+        defer { try? h.close() }
+        let size = (try? h.seekToEnd()) ?? 0
+        try? h.seek(toOffset: size > tailBytes ? size - tailBytes : 0)
+        guard let data = try? h.readToEnd() else { return Summary() }
+        // The cut can land inside a multi-byte character, so decode leniently.
+        let text = String(decoding: data, as: UTF8.self)
+        return summary(inTail: Substring(text))
+    }
+
+    /// 489_136 → "489k", 1_240_000 → "1.2M".
+    public static func short(_ tokens: Int) -> String {
+        if tokens >= 1_000_000 { return String(format: "%.1fM", Double(tokens) / 1_000_000) }
+        if tokens >= 1_000 { return "\(tokens / 1_000)k" }
+        return "\(tokens)"
     }
 }

@@ -7,6 +7,10 @@ import AureoleCore
 final class SessionStore: ObservableObject {
     @Published private(set) var board = SessionBoard()
     @Published private(set) var sessions: [AgentSession] = []
+    /// Context tokens per session, read lazily from each transcript's tail.
+    @Published private(set) var context: [String: Int] = [:]
+    /// Conversation titles Claude Code generates, read from the same transcript tail.
+    @Published private(set) var titles: [String: String] = [:]
     @Published private(set) var hookStatus: HookInstaller.Status = .notInstalled
     @Published private(set) var lastError: String?
 
@@ -17,6 +21,8 @@ final class SessionStore: ObservableObject {
     private var timer: Timer?
     private var reloadWork: DispatchWorkItem?
     private var cancellables: Set<AnyCancellable> = []
+    private var contextChecked: [String: Date] = [:]
+    private let contextQueue = DispatchQueue(label: "app.aureole.context", qos: .utility)
 
     /// Where the hook helper lives once installed; settings.json points here, not into the app bundle, so the app can move.
     static let helperURL = AureolePaths.appSupport.appendingPathComponent("aureole-hook")
@@ -85,6 +91,28 @@ final class SessionStore: ObservableObject {
         let newBoard = SessionBoard.build(live, now: now) { _ in true }
         if live != sessions { sessions = live }
         if newBoard != board { board = newBoard }
+        refreshContext(for: live, now: now)
+    }
+
+    /// Transcripts run to tens of MB, so read each tail off the main thread and at most every 15 s per session.
+    private func refreshContext(for live: [AgentSession], now: Date) {
+        let ids = Set(live.map(\.sessionId))
+        for gone in contextChecked.keys where !ids.contains(gone) { context[gone] = nil; titles[gone] = nil; contextChecked[gone] = nil }
+        for s in live {
+            guard let path = s.transcriptPath, now.timeIntervalSince(contextChecked[s.sessionId] ?? .distantPast) > 15 else { continue }
+            contextChecked[s.sessionId] = now
+            let id = s.sessionId
+            contextQueue.async { [weak self] in
+                let summary = TranscriptReader.summary(path: path)
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        if let tokens = summary.contextTokens, self.context[id] != tokens { self.context[id] = tokens }
+                        if let title = summary.title, self.titles[id] != title { self.titles[id] = title }
+                    }
+                }
+            }
+        }
     }
 
     /// kill(pid, 0) answers "does this process exist" without touching it.
@@ -139,6 +167,9 @@ final class SessionStore: ObservableObject {
         }
         refreshHookStatus()
     }
+
+    /// What to call a session on screen: Claude Code's own title when there is one, else the folder.
+    func name(of s: AgentSession) -> String { titles[s.sessionId] ?? s.projectName }
 
     // MARK: - Jump
 

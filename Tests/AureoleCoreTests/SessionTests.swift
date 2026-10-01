@@ -100,4 +100,29 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(preAfter.count, 1)
         XCTAssertNil((removed["hooks"] as? [String: Any])?["Stop"])
     }
+
+    func testRecentActivityKeepsLastThreeNewestFirst() {
+        var s: AgentSession? = nil
+        for (i, f) in ["a.swift", "b.swift", "c.swift", "d.swift"].enumerated() {
+            s = SessionReducer.apply(event("PreToolUse", ["tool_name": "Edit", "tool_input": ["file_path": "/x/\(f)"]]), to: s, now: t0 + Double(i))
+        }
+        XCTAssertEqual(s?.recent?.map(\.text), ["Edit · d.swift", "Edit · c.swift", "Edit · b.swift"])
+    }
+
+    func testContextTokensFromTranscriptTail() {
+        let tail = """
+        {"type":"assistant","isSidechain":false,"message":{"role":"assistant","usage":{"input_tokens":10,"cache_creation_input_tokens":200,"cache_read_input_tokens":3000,"output_tokens":50}}}
+        {"type":"user","message":{"role":"user","content":"next"}}
+        {"type":"assistant","isSidechain":true,"message":{"role":"assistant","usage":{"input_tokens":999999,"cache_read_input_tokens":0}}}
+        {"type":"assistant","message":{"role":"assistant","usage":{"input_tokens":2,"cache_creation_input_tokens":2438,"cache_read_input_tokens":486698,"output_tokens":399}}}
+        {"type":"ai-title","aiTitle":"Notch workbench progress","sessionId":"abc"}
+        {"type":"attachment","note":"\"usage\" mentioned in passing"}
+        """
+        XCTAssertEqual(TranscriptReader.contextTokens(inTail: Substring(tail)), 489_138)
+        XCTAssertEqual(TranscriptReader.summary(inTail: Substring(tail)).title, "Notch workbench progress")
+        XCTAssertNil(TranscriptReader.contextTokens(inTail: "not json at all"))
+        XCTAssertEqual(TranscriptReader.short(489_138), "489k")
+        XCTAssertEqual(TranscriptReader.short(1_240_000), "1.2M")
+        XCTAssertEqual(TranscriptReader.short(812), "812")
+    }
 }

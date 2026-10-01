@@ -80,12 +80,15 @@ for eight hook events, keeping any hooks you already have. From then on:
 
 - A session that is waiting on you (a permission prompt or a question) appears as a pill at the top
   of the panel; click it to bring that terminal window to the front.
+- Sessions that are working show as chips on a **Sessions** line, named by the title Claude Code
+  gives the conversation.
 - **Workbench ›** in the panel footer grows the panel downward with every session: waiting, working
-  and idle, each with its current tool and folder.
+  and idle, each with its last few tool calls, folder and context size.
 
 Each session is one small file under `~/Library/Application Support/Aureole/sessions/` (mode 0600)
 holding the folder, state, current tool, terminal id and an optional 80-character prompt excerpt
-(switch it off in Settings). The helper prints nothing and exits 0, so it can never block or change
+(switch it off in Settings). The title and context size are read from the tail of the session's
+own transcript and kept in memory only. The helper prints nothing and exits 0, so it can never block or change
 a session. Jumping to a Terminal or iTerm2 window uses Apple Events; macOS asks once.
 
 ## Privacy

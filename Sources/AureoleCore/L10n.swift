@@ -57,6 +57,7 @@ public enum L10n {
         "≈%d%%/h": "≈%d%%/小时", " · empty %@, before reset": " · %@ 用完，早于重置", " · empty %@": " · %@ 用完",
         // sessions
         "Waiting for you %d": "等你 %d", "Needs you %d": "等你处理 %d", "Working %d": "干活中 %d", "Idle %d": "空闲 %d",
+        "Sessions %d": "会话 %d", "context %@": "上下文 %@",
         "approval": "等批准", "question": "在提问", "waited %@": "已等 %@", "thinking": "思考中",
         "Workbench ›": "工作台 ›", "‹ Collapse": "‹ 收起", "Click outside to collapse": "点面板外收回",
         "Jump to terminal": "跳到终端", "Requesting": "正在请求", "Last": "最近", "Prompt": "提示词", "Folder": "目录",
