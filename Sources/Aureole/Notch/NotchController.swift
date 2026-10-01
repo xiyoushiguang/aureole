@@ -17,8 +17,8 @@ final class NotchViewModel: ObservableObject {
     let closedDrop: CGFloat = 6
     /// Invisible margin around the notch that also triggers the hover.
     let hoverMargin: CGFloat = 20
-    /// The optional horizon under the task list needs a much wider panel.
-    @Published var horizon = false
+    /// The horizon layout needs a much wider panel than the list.
+    @Published var horizon = true
     var openWidth: CGFloat { horizon ? min(1000, geometry.screenFrame.width - 80) : 580 }
     /// Envelope the panel window is sized to; the drawn shape is smaller.
     var maxOpenHeight: CGFloat { min(horizon ? 900 : 760, geometry.screenFrame.height - 40) }
@@ -47,8 +47,8 @@ final class NotchController {
         host.layer?.backgroundColor = NSColor.clear.cgColor
         panel.contentView = host
         installMonitors()
-        settings.$showHorizon.removeDuplicates().sink { [weak self] on in
-            self?.model.horizon = on
+        settings.$panelLayout.removeDuplicates().sink { [weak self] layout in
+            self?.model.horizon = layout == .horizon
             DispatchQueue.main.async { self?.layout() }
         }.store(in: &cancellables)
     }

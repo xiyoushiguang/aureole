@@ -4,7 +4,7 @@ import CoreGraphics
 
 final class HorizonTests: XCTestCase {
     let now = Date(timeIntervalSince1970: 1_800_000_000)
-    let L = HorizonLayout.full
+    let L = HorizonLayout.band
 
     func window(used: Double, resetIn: TimeInterval, duration: TimeInterval = 5 * 3600) -> UsageWindow {
         UsageWindow(key: "five_hour", label: "5h", kind: .fiveHour, usedPercent: used,
@@ -15,10 +15,9 @@ final class HorizonTests: XCTestCase {
         XCTAssertEqual(L.nowAngle, -3.84, accuracy: 1e-9)
         let top = L.point(0, 1400)
         XCTAssertEqual(top.x, 500, accuracy: 1e-9)
-        XCTAssertEqual(top.y, 470, accuracy: 1e-9)
-        let right = L.point(16, 1400)
-        XCTAssertEqual(right.x, 885.9, accuracy: 0.1)    // matches the D2 board
-        XCTAssertEqual(right.y, 524.2, accuracy: 0.1)
+        XCTAssertEqual(top.y, 200, accuracy: 1e-9)
+        XCTAssertEqual(L.point(16, 1400).x, 885.9, accuracy: 0.1)    // same x as the D2 board
+        XCTAssertEqual(L.x(angle: L.nowAngle), 406.2, accuracy: 0.1)
     }
 
     func testClockMapsPastAndFuture() {
@@ -79,7 +78,7 @@ final class HorizonTests: XCTestCase {
         XCTAssertEqual(scene.curve.last, L.point(-3.84, 1440))
     }
 
-    func testOrbitsPutWaitingOutermost() {
+    func testLanesListEverySessionWaitingFirst() {
         func session(_ id: String, _ state: SessionState, spans: [SessionSpan]) -> AgentSession {
             var s = AgentSession(provider: .claude, sessionId: id, cwd: "/x/\(id)", now: now - 3600)
             s.state = state
@@ -91,16 +90,16 @@ final class HorizonTests: XCTestCase {
         b.waiting = [session("q", .waitingPermission, spans: [SessionSpan(start: now - 5 * 3600, end: now - 60, kind: .working),
                                                               SessionSpan(start: now - 60, end: nil, kind: .waiting)])]
         b.idle = [session("i", .idle, spans: [SessionSpan(start: now - 100 * 60, end: now - 80 * 60, kind: .working)]),
-                  session("gone", .idle, spans: [])]
+                  session("new", .idle, spans: [])]
         let scene = HorizonScene(layout: L, now: now, window: nil, samples: [], prediction: nil, sessions: b)
-        XCTAssertEqual(scene.orbits.map(\.id), ["q", "w", "i"])
-        XCTAssertEqual(scene.orbits.map(\.radius), [1700, 1660, 1740])
-        let q = scene.orbits[0]
-        XCTAssertEqual(q.arcs.first!.from, -16, accuracy: 1e-9)          // clipped to the left edge
-        XCTAssertEqual(q.arcs.last!.to, -3.84, accuracy: 1e-9)
-        XCTAssertEqual(q.dotAngle, -3.84)
-        XCTAssertEqual(scene.orbits[2].dotAngle!, scene.clock.angle(now - 80 * 60), accuracy: 1e-9)
-        XCTAssertEqual(scene.guideRadii, [1740, 1700, 1660, 1620, 1580, 1540])
+        XCTAssertEqual(scene.lanes.map(\.id), ["q", "w", "i", "new"])
+        XCTAssertEqual(scene.lanes.map(\.role), [.waiting, .working, .idle, .idle])
+        let q = scene.lanes[0]
+        XCTAssertEqual(q.segments.first!.from, -16, accuracy: 1e-9)          // clipped to the left edge
+        XCTAssertEqual(q.segments.last!.to, -3.84, accuracy: 1e-9)
+        XCTAssertEqual(q.segments.last!.kind, .waiting)
+        XCTAssertEqual(scene.lanes[2].segments.first!.to, scene.clock.angle(now - 80 * 60), accuracy: 1e-9)
+        XCTAssertTrue(scene.lanes[3].segments.isEmpty)
     }
 
     func testHeadline() {

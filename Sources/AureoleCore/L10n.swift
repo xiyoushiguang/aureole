@@ -66,7 +66,7 @@ public enum L10n {
         "No quota here, about %@": "这段没有额度，约 %@", "Steady pace": "匀速用完的线",
         "Claude working": "Claude 在干活", "Codex working": "Codex 在干活", "Waiting on you": "在等你",
         "Small ring = context used": "小环是上下文占用", "context %d%%": "上下文 %d%%", "Context": "上下文",
-        "working": "干活中", "Last: %@": "上次：%@", "Show the horizon timeline under the tasks": "在任务下方显示晨昏线",
+        "working": "干活中", "Last: %@": "上次：%@", "Panel layout": "面板样式", "Horizon": "晨昏线", "List": "列表", "Session tracking is off.": "会话跟踪已关闭。",
         "Context %% is an estimate (200k or 1M window).": "上下文百分比是估算（按 20 万或 100 万窗口）。",
         "Jump to terminal": "跳到终端", "Requesting": "正在请求", "Last": "最近", "Prompt": "提示词", "Folder": "目录",
         "No agent sessions right now.": "现在没有正在运行的会话。",

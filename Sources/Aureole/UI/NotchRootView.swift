@@ -116,22 +116,24 @@ struct OpenNotchView: View {
         let notchH = model.geometry.notchRect.height
         VStack(spacing: 0) {
             header.frame(height: notchH)
-            VStack(spacing: 10) {
-                ForEach(enabledProviders) { provider in
-                    ProviderRow(provider: provider, store: store)
+            if settings.panelLayout == .horizon {
+                HorizonPanel(store: store, sessions: sessions, settings: settings, width: model.openWidth,
+                             lanesMaxHeight: horizonLanesMax, pinned: model.pinned, actions: actions)
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(enabledProviders) { provider in
+                        ProviderRow(provider: provider, store: store)
+                    }
+                    if settings.sessionsEnabled {
+                        Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+                        TaskList(sessions: sessions, maxHeight: listMax, actions: actions)
+                    }
                 }
-                if settings.sessionsEnabled {
-                    Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
-                    TaskList(sessions: sessions, maxHeight: taskListMax, actions: actions)
-                }
+                .padding(.horizontal, 22)
+                .padding(.top, 10)
+                .padding(.bottom, 10)
+                footer.padding(.horizontal, 22).padding(.top, 4).padding(.bottom, 14)
             }
-            .padding(.horizontal, 22)
-            .padding(.top, 10)
-            .padding(.bottom, settings.showHorizon ? 4 : 10)
-            if settings.showHorizon {
-                HorizonBoard(store: store, sessions: sessions, settings: settings, width: model.openWidth, actions: actions)
-            }
-            footer.padding(.horizontal, 22).padding(.top, 4).padding(.bottom, 14)
         }
         .frame(width: model.openWidth, alignment: .top)
         .background(GeometryReader { geo in
@@ -139,11 +141,15 @@ struct OpenNotchView: View {
         })
     }
 
-    /// Whatever height the rows and (optional) horizon leave; past that the task list scrolls.
-    private var taskListMax: CGFloat {
-        let rows = CGFloat(enabledProviders.count) * 90 + 110
-        let horizon = settings.showHorizon ? (600 - HorizonBoard.cropTop) * model.openWidth / 1000 : 0
-        return max(160, model.maxOpenHeight - rows - horizon)
+    /// Room for the task list once the usage rows are in; past that it scrolls.
+    private var listMax: CGFloat {
+        max(160, model.maxOpenHeight - CGFloat(enabledProviders.count) * 90 - 110)
+    }
+
+    /// Room for the session lanes under the arc and above the footer.
+    private var horizonLanesMax: CGFloat {
+        max(HorizonPanel.laneHeight * 2, model.maxOpenHeight - model.geometry.notchRect.height
+            - HorizonLayout.band.height * model.openWidth / 1000 - 44)
     }
 
     private var enabledProviders: [ProviderID] {

@@ -1,8 +1,8 @@
 import CoreGraphics
 import Foundation
 
-/// The "horizon" panel: time runs along the edge of a planet, usage rises off its surface, and each
-/// session circles on its own orbit. Everything here is pure geometry so it can be tested without a view.
+/// The "horizon" panel: time runs along the edge of a planet, usage rises off its surface, and below the
+/// horizon each session gets a lane on the same time axis. Everything here is pure geometry so it can be tested.
 ///
 /// Coordinates are canvas points with y pointing down. An angle θ is in degrees, 0 = straight up, positive
 /// to the right; `point(θ, r) = (cx + r·sinθ, cy − r·cosθ)`.
@@ -24,33 +24,18 @@ public struct HorizonLayout: Equatable, Sendable {
     public var futureCap: TimeInterval = 5 * 3600
     /// The shortest future the right side will show, so a reset that is minutes away does not stretch everything.
     public var futureFloor: TimeInterval = 30 * 60
-    /// Active sessions get orbits between these radii, the ones waiting on you outermost.
-    public var orbitInner: Double
-    public var orbitOuter: Double
-    public var orbitStep: Double
-    /// Idle sessions all share this orbit.
-    public var idleOrbit: Double
-    /// At most this many active sessions get an orbit.
-    public var maxOrbits: Int
-
-    public init(width: Double, height: Double, center: CGPoint, horizon: Double, percentScale: Double,
-                orbitInner: Double, orbitOuter: Double, orbitStep: Double, idleOrbit: Double, maxOrbits: Int) {
+    public init(width: Double, height: Double, center: CGPoint, horizon: Double, percentScale: Double) {
         self.width = width
         self.height = height
         self.center = center
         self.horizon = horizon
         self.percentScale = percentScale
-        self.orbitInner = orbitInner
-        self.orbitOuter = orbitOuter
-        self.orbitStep = orbitStep
-        self.idleOrbit = idleOrbit
-        self.maxOrbits = maxOrbits
     }
 
-    /// The second layer, drawn on a 1000×600 canvas (scaled to the panel).
-    public static let full = HorizonLayout(width: 1000, height: 600, center: CGPoint(x: 500, y: 1870), horizon: 1400,
-                                           percentScale: 100, orbitInner: 1540, orbitOuter: 1700, orbitStep: 40,
-                                           idleOrbit: 1740, maxOrbits: 8)
+    /// The arc above the task lanes, on a 1000×300 canvas (scaled to the panel). Tall enough that the planet
+    /// covers the bottom corners, so its night side runs straight on into the lanes.
+    public static let band = HorizonLayout(width: 1000, height: 300, center: CGPoint(x: 500, y: 1600), horizon: 1400,
+                                           percentScale: 100)
 
     public var nowAngle: Double { minAngle + nowFraction * (maxAngle - minAngle) }
 
@@ -58,6 +43,9 @@ public struct HorizonLayout: Equatable, Sendable {
         let a = degrees * .pi / 180
         return CGPoint(x: center.x + r * sin(a), y: center.y - r * cos(a))
     }
+
+    /// Lanes below the arc use the horizon's x for each moment, so they line up with its ticks.
+    public func x(angle: Double) -> Double { point(angle, horizon).x }
 
     public func radius(percent: Double) -> Double { horizon + min(105, max(0, percent)) / 100 * percentScale }
 
@@ -105,19 +93,18 @@ public struct HorizonTick: Equatable, Sendable {
     public let angle: Double
 }
 
-public struct HorizonOrbit: Equatable, Sendable, Identifiable {
+/// One session's lane: its working/waiting stretches over the visible past, and what it is doing now.
+public struct HorizonLane: Equatable, Sendable, Identifiable {
     public enum Role: Equatable, Sendable { case waiting, working, idle }
-    public struct Arc: Equatable, Sendable {
+    public struct Segment: Equatable, Sendable {
         public let from: Double
         public let to: Double
         public let kind: SpanKind
     }
     public let session: AgentSession
     public let role: Role
-    public let radius: Double
-    public let arcs: [Arc]
-    /// Where the session's light sits: on the "now" line for active sessions, at the end of its last stretch when idle.
-    public let dotAngle: Double?
+    /// In angles, like everything else on the clock; map with `HorizonLayout.x(angle:)`.
+    public let segments: [Segment]
     public var id: String { session.id }
 }
 
@@ -142,12 +129,11 @@ public struct HorizonScene: Equatable, Sendable {
     /// What steady use would look like: 0% at the window start, 100% at the reset.
     public let paceLine: [CGPoint]
     public let ticks: [HorizonTick]
-    public let orbits: [HorizonOrbit]
-    /// Guide circles for the orbit radii in use, including the idle one.
-    public let guideRadii: [Double]
+    /// Waiting on you first (longest wait first), then working, then idle.
+    public let lanes: [HorizonLane]
 
     public static func == (a: HorizonScene, b: HorizonScene) -> Bool {
-        a.layout == b.layout && a.clock == b.clock && a.window == b.window && a.curve == b.curve && a.orbits == b.orbits
+        a.layout == b.layout && a.clock == b.clock && a.window == b.window && a.curve == b.curve && a.lanes == b.lanes
             && a.forecast?.0 == b.forecast?.0 && a.forecast?.1 == b.forecast?.1 && a.dryFrom == b.dryFrom
     }
 
@@ -223,9 +209,7 @@ public struct HorizonScene: Equatable, Sendable {
         paceLine = pace
 
         ticks = Self.ticks(clock: clock, windowStart: windowStart, reset: window?.resetsAt)
-        let orbits = Self.orbits(sessions, layout: layout, clock: clock)
-        self.orbits = orbits
-        guideRadii = Self.guides(layout: layout, used: orbits)
+        lanes = Self.lanes(sessions, clock: clock)
     }
 
     static func ticks(clock: HorizonClock, windowStart: Date?, reset: Date?) -> [HorizonTick] {
@@ -245,43 +229,19 @@ public struct HorizonScene: Equatable, Sendable {
         return out.sorted { $0.angle < $1.angle }
     }
 
-    /// Waiting sessions outermost (longest wait first), then working ones; idle ones share the outer guide.
-    static func orbits(_ board: SessionBoard, layout: HorizonLayout, clock: HorizonClock) -> [HorizonOrbit] {
-        let active = Array((board.waiting + board.working).prefix(layout.maxOrbits))
-        let step = active.count > 1 ? min(layout.orbitStep, (layout.orbitOuter - layout.orbitInner) / Double(active.count - 1)) : layout.orbitStep
-        var out: [HorizonOrbit] = []
-        for (i, s) in active.enumerated() {
-            out.append(HorizonOrbit(session: s, role: s.state.needsYou ? .waiting : .working, radius: layout.orbitOuter - Double(i) * step,
-                                    arcs: arcs(s, clock: clock), dotAngle: layout.nowAngle))
-        }
-        if layout.maxOrbits > 3 {
-            for s in board.idle {
-                let a = arcs(s, clock: clock)
-                guard let last = a.last else { continue }
-                out.append(HorizonOrbit(session: s, role: .idle, radius: layout.idleOrbit, arcs: a, dotAngle: last.to))
-            }
-        }
-        return out
+    static func lanes(_ board: SessionBoard, clock: HorizonClock) -> [HorizonLane] {
+        board.waiting.map { HorizonLane(session: $0, role: .waiting, segments: segments($0, clock: clock)) }
+            + board.working.map { HorizonLane(session: $0, role: .working, segments: segments($0, clock: clock)) }
+            + board.idle.map { HorizonLane(session: $0, role: .idle, segments: segments($0, clock: clock)) }
     }
 
-    static func arcs(_ s: AgentSession, clock: HorizonClock) -> [HorizonOrbit.Arc] {
+    static func segments(_ s: AgentSession, clock: HorizonClock) -> [HorizonLane.Segment] {
         (s.spans ?? []).compactMap { span in
             let end = min(span.end ?? clock.now, clock.now)
             guard end > clock.start else { return nil }
             let a = clock.angle(max(span.start, clock.start)), b = clock.angle(end)
-            return HorizonOrbit.Arc(from: min(a, b - 0.15), to: b, kind: span.kind)   // a blip still shows
+            return HorizonLane.Segment(from: min(a, b - 0.15), to: b, kind: span.kind)   // a blip still shows
         }
-    }
-
-    static func guides(layout: HorizonLayout, used: [HorizonOrbit]) -> [Double] {
-        let n = used.filter { $0.role != .idle }.count
-        var radii: [Double] = []
-        var r = layout.orbitOuter
-        let count = max(n, Int(((layout.orbitOuter - layout.orbitInner) / layout.orbitStep).rounded()) + 1)
-        let step = count > 1 ? min(layout.orbitStep, (layout.orbitOuter - layout.orbitInner) / Double(count - 1)) : layout.orbitStep
-        for _ in 0..<count { radii.append(r); r -= step }
-        if layout.maxOrbits > 3 { radii.insert(layout.idleOrbit, at: 0) }
-        return radii
     }
 }
 
