@@ -10,11 +10,13 @@ VERSION="$(cat VERSION)"
 BUILD_NO="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 if [ "${UNIVERSAL:-0}" = "1" ]; then
     swift build -c "$CONFIG" --arch arm64 --arch x86_64 --product Aureole
+    swift build -c "$CONFIG" --arch arm64 --arch x86_64 --product aureole-hook
     # Multi-arch builds go through Xcode's build system, which capitalises the configuration.
     case "$CONFIG" in debug) XC_CONFIG=Debug ;; *) XC_CONFIG=Release ;; esac
     BIN=".build/apple/Products/$XC_CONFIG/Aureole"
 else
     swift build -c "$CONFIG" --product Aureole
+    swift build -c "$CONFIG" --product aureole-hook
     BIN=".build/$CONFIG/Aureole"
 fi
 APP="$OUT_DIR/Aureole.app"
@@ -23,6 +25,8 @@ mkdir -p "$OUT_DIR"
 if [ -e "$APP" ]; then mv "$APP" "$(mktemp -d "${TMPDIR:-/tmp}/aureole-stale.XXXXXX")/"; fi
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Aureole"
+# The hook helper ships beside the main binary; the app copies it to Application Support on launch.
+cp "$(dirname "$BIN")/aureole-hook" "$APP/Contents/MacOS/aureole-hook"
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD_NO/" Resources/Info.plist > "$APP/Contents/Info.plist"
 if [ -f Resources/AppIcon.icns ]; then cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"; fi
 # Ad-hoc signature by default. Set CODESIGN_IDENTITY to a Developer ID for notarized releases.

@@ -26,6 +26,9 @@ final class SettingsStore: ObservableObject {
     @Published var routingHints: Bool { didSet { defaults.set(routingHints, forKey: "routingHints") } }
     @Published var nativeNotifications: Bool { didSet { defaults.set(nativeNotifications, forKey: "nativeNotifications") } }
     @Published var panelStyle: PanelStyle { didSet { defaults.set(panelStyle.rawValue, forKey: "panelStyle") } }
+    @Published var sessionsEnabled: Bool { didSet { defaults.set(sessionsEnabled, forKey: "sessionsEnabled") } }
+    /// The hook helper reads this key too (via the app's defaults domain) to decide whether to keep a prompt excerpt.
+    @Published var sessionPromptPreview: Bool { didSet { defaults.set(sessionPromptPreview, forKey: "sessionPromptPreview") } }
     @Published var language: Language {
         didSet { defaults.set(language.rawValue, forKey: "language"); L10n.language = language }
     }
@@ -47,6 +50,8 @@ final class SettingsStore: ObservableObject {
         claudeCredentialSource = ClaudeCredentialSource(rawValue: d.string(forKey: "claudeCredentialSource") ?? "") ?? .securityCLI
         language = Language(rawValue: d.string(forKey: "language") ?? "") ?? .system
         panelStyle = PanelStyle(rawValue: d.string(forKey: "panelStyle") ?? "") ?? .solid
+        sessionsEnabled = d.object(forKey: "sessionsEnabled") as? Bool ?? true
+        sessionPromptPreview = d.object(forKey: "sessionPromptPreview") as? Bool ?? true
         if let data = try? Data(contentsOf: channelsURL),
            let decoded = try? JSONDecoder.aureole.decode([ChannelConfig].self, from: data) {
             channels = decoded

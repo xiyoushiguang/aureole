@@ -4,11 +4,13 @@ import AureoleCore
 struct SettingsView: View {
     @ObservedObject var settings: SettingsStore
     @ObservedObject var store: UsageStore
+    @ObservedObject var sessions: SessionStore
 
     var body: some View {
         TabView {
             GeneralTab(settings: settings).tabItem { Label(L10n.t("General"), systemImage: "gearshape") }
             ProvidersTab(settings: settings, store: store).tabItem { Label(L10n.t("Providers"), systemImage: "person.2") }
+            SessionsTab(settings: settings, sessions: sessions).tabItem { Label(L10n.t("Sessions"), systemImage: "terminal") }
             ChannelsTab(settings: settings, store: store).tabItem { Label(L10n.t("Notifications"), systemImage: "bell") }
         }
         .frame(minWidth: 560, minHeight: 460)
@@ -87,6 +89,46 @@ struct ProvidersTab: View {
         default: text = settings.isEnabled(id) ? L10n.t("Waiting…") : L10n.t("Off")
         }
         return LabeledContent(L10n.t("Status")) { Text(text).foregroundStyle(.secondary).textSelection(.enabled) }
+    }
+}
+
+struct SessionsTab: View {
+    @ObservedObject var settings: SettingsStore
+    @ObservedObject var sessions: SessionStore
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle(L10n.t("Track Claude Code sessions"), isOn: $settings.sessionsEnabled)
+                LabeledContent(L10n.t("Claude Code hooks")) {
+                    HStack(spacing: 10) {
+                        Text(statusText).foregroundStyle(.secondary)
+                        switch sessions.hookStatus {
+                        case .installed: Button(L10n.t("Remove hooks")) { sessions.uninstallHooks() }
+                        default: Button(L10n.t("Install hooks")) { sessions.installHooks() }
+                        }
+                    }
+                }
+                if let err = sessions.lastError {
+                    Text(err).font(.caption).foregroundStyle(.orange)
+                }
+                Toggle(L10n.t("Keep an 80-character excerpt of each prompt"), isOn: $settings.sessionPromptPreview)
+            }
+            Section {
+                Text(L10n.t("Aureole adds a small helper to ~/.claude/settings.json that runs on each hook event and writes one file per session under Application Support (0600): folder, state, the current tool, and an optional prompt excerpt. Nothing leaves this Mac. Your other hooks are kept."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { sessions.refreshHookStatus() }
+    }
+
+    private var statusText: String {
+        switch sessions.hookStatus {
+        case .installed(let n): return L10n.f("Installed (%d events)", n)
+        case .partial(let n): return L10n.f("Partially installed (%d of %d)", n, HookInstaller.events.count)
+        case .notInstalled: return L10n.t("Not installed")
+        }
     }
 }
 

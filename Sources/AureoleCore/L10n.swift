@@ -55,6 +55,18 @@ public enum L10n {
         "route new work → %@": "新任务转给 %@", "Refresh": "刷新", "Settings…": "设置…", "Pin": "固定", "Unpin": "取消固定",
         "Loading…": "加载中…", "No windows reported": "未返回额度窗口", "idle": "空闲",
         "≈%d%%/h": "≈%d%%/小时", " · empty %@, before reset": " · %@ 用完，早于重置", " · empty %@": " · %@ 用完",
+        // sessions
+        "Waiting for you %d": "等你 %d", "Needs you %d": "等你处理 %d", "Working %d": "干活中 %d", "Idle %d": "空闲 %d",
+        "approval": "等批准", "question": "在提问", "waited %@": "已等 %@", "thinking": "思考中",
+        "Workbench ›": "工作台 ›", "‹ Collapse": "‹ 收起", "Click outside to collapse": "点面板外收回",
+        "Jump to terminal": "跳到终端", "Requesting": "正在请求", "Last": "最近", "Prompt": "提示词", "Folder": "目录",
+        "No agent sessions right now.": "现在没有正在运行的会话。",
+        "Install the Claude Code hooks in Settings → Sessions to see them here.": "在 设置 → 会话 里安装 Claude Code hooks 后，这里会显示会话。",
+        "Sessions": "会话", "Track Claude Code sessions": "跟踪 Claude Code 会话", "Claude Code hooks": "Claude Code hooks",
+        "Installed (%d events)": "已安装（%d 个事件）", "Partially installed (%d of %d)": "部分安装（%d/%d）", "Not installed": "未安装",
+        "Install hooks": "安装 hooks", "Remove hooks": "移除 hooks", "Keep an 80-character excerpt of each prompt": "保留每条提示词的前 80 个字符",
+        "Aureole adds a small helper to ~/.claude/settings.json that runs on each hook event and writes one file per session under Application Support (0600): folder, state, the current tool, and an optional prompt excerpt. Nothing leaves this Mac. Your other hooks are kept.":
+            "Aureole 会在 ~/.claude/settings.json 里登记一个小程序，每个 hook 事件触发时把该会话的状态写进「应用程序支持」目录下的一个文件（权限 0600）：目录、状态、当前工具，以及可选的提示词摘录。数据不离开这台 Mac，你原有的 hooks 原样保留。",
         // menu
         "Show panel": "显示面板", "Refresh now": "立即刷新", "Launch at login": "开机自启", "Quit Aureole": "退出 Aureole",
         // settings

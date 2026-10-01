@@ -72,6 +72,22 @@ switch to the direct Keychain API in Settings → Providers.
 These are the same unofficial endpoints the vendors' own CLIs use. If a vendor changes them,
 Aureole shows an error instead of a number until it is updated.
 
+## Sessions (preview)
+
+Aureole can also show what your Claude Code sessions are doing. Turn it on in **Settings →
+Sessions → Install hooks**: it registers a small helper (`aureole-hook`) in `~/.claude/settings.json`
+for eight hook events, keeping any hooks you already have. From then on:
+
+- A session that is waiting on you (a permission prompt or a question) appears as a pill at the top
+  of the panel; click it to bring that terminal window to the front.
+- **Workbench ›** in the panel footer grows the panel downward with every session: waiting, working
+  and idle, each with its current tool and folder.
+
+Each session is one small file under `~/Library/Application Support/Aureole/sessions/` (mode 0600)
+holding the folder, state, current tool, terminal id and an optional 80-character prompt excerpt
+(switch it off in Settings). The helper prints nothing and exits 0, so it can never block or change
+a session. Jumping to a Terminal or iTerm2 window uses Apple Events; macOS asks once.
+
 ## Privacy
 
 - No accounts, no telemetry, no analytics.

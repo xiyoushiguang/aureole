@@ -4,6 +4,7 @@ import AureoleCore
 struct NotchRootView: View {
     @ObservedObject var model: NotchViewModel
     @ObservedObject var store: UsageStore
+    @ObservedObject var sessions: SessionStore
     @ObservedObject var settings: SettingsStore
     weak var actions: AppActions?
 
@@ -12,7 +13,7 @@ struct NotchRootView: View {
         ZStack(alignment: .top) {
             backdrop
             if model.isOpen {
-                OpenNotchView(model: model, store: store, settings: settings, actions: actions)
+                OpenNotchView(model: model, store: store, sessions: sessions, settings: settings, actions: actions)
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             } else {
                 ClosedNotchView(model: model, store: store)
@@ -22,6 +23,7 @@ struct NotchRootView: View {
         .frame(width: size.width, height: size.height)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(.spring(response: 0.36, dampingFraction: 0.84), value: model.isOpen)
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: model.expanded)
         .animation(.easeOut(duration: 0.18), value: model.openContentHeight)
         .id(settings.language)
         .onPreferenceChange(OpenContentHeightKey.self) { h in
@@ -107,6 +109,7 @@ struct ClosedNotchView: View {
 struct OpenNotchView: View {
     @ObservedObject var model: NotchViewModel
     @ObservedObject var store: UsageStore
+    @ObservedObject var sessions: SessionStore
     @ObservedObject var settings: SettingsStore
     weak var actions: AppActions?
 
@@ -115,8 +118,17 @@ struct OpenNotchView: View {
         VStack(spacing: 0) {
             header.frame(height: notchH)
             VStack(spacing: 10) {
+                if settings.sessionsEnabled, !sessions.board.waiting.isEmpty {
+                    WaitingRow(waiting: sessions.board.waiting, actions: actions)
+                    Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+                }
                 ForEach(enabledProviders) { provider in
                     ProviderRow(provider: provider, store: store)
+                }
+                if model.expanded {
+                    Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+                    WorkbenchSection(sessions: sessions, hooksInstalled: sessions.hookStatus != .notInstalled, actions: actions)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
                 footer
             }
@@ -169,6 +181,13 @@ struct OpenNotchView: View {
             Button(L10n.t("Refresh")) { actions?.refreshNow() }
             Button(L10n.t("Settings…")) { actions?.openSettings() }
             Spacer()
+            if settings.sessionsEnabled {
+                if model.expanded {
+                    Text(L10n.t("Click outside to collapse")).foregroundStyle(Theme.faint)
+                }
+                Button(L10n.t(model.expanded ? "‹ Collapse" : "Workbench ›")) { actions?.toggleWorkbench() }
+                    .foregroundStyle(Color.white.opacity(0.78))
+            }
             Button(L10n.t(model.pinned ? "Unpin" : "Pin")) { actions?.togglePinned() }
         }
         .buttonStyle(.plain)

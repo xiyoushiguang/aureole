@@ -15,6 +15,7 @@
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
+    <key>NSAppleEventsUsageDescription</key><string>Aureole brings the terminal window that owns an agent session to the front when you ask it to.</string>
     <key>NSHumanReadableCopyright</key><string>MIT License — Aureole contributors</string>
     <key>NSPrincipalClass</key><string>NSApplication</string>
 </dict>

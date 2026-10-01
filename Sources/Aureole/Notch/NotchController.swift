@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import AureoleCore
 
@@ -6,6 +7,8 @@ import AureoleCore
 final class NotchViewModel: ObservableObject {
     @Published var isOpen = false
     @Published var pinned = false
+    /// Second layer: the session board grown below the usage rows. Always pinned while expanded.
+    @Published var expanded = false
     @Published var geometry = NotchGeometry.placeholder
 
     /// Concave "ears" at the top corners. Zero in both states: nothing may stick out over the menu bar,
@@ -18,7 +21,7 @@ final class NotchViewModel: ObservableObject {
     let hoverMargin: CGFloat = 20
     let openWidth: CGFloat = 580
     /// Envelope the panel window is sized to; the drawn shape is smaller.
-    let maxOpenHeight: CGFloat = 360
+    var maxOpenHeight: CGFloat { expanded ? 760 : 360 }
     @Published var openContentHeight: CGFloat = 200
     var openSize: CGSize { CGSize(width: openWidth, height: min(maxOpenHeight, openContentHeight)) }
 
@@ -35,13 +38,18 @@ final class NotchController {
     private var openWork: DispatchWorkItem?
     private var closeWork: DispatchWorkItem?
 
-    init(store: UsageStore, settings: SettingsStore, actions: AppActions) {
-        let root = NotchRootView(model: model, store: store, settings: settings, actions: actions)
+    private var cancellables: Set<AnyCancellable> = []
+
+    init(store: UsageStore, sessions: SessionStore, settings: SettingsStore, actions: AppActions) {
+        let root = NotchRootView(model: model, store: store, sessions: sessions, settings: settings, actions: actions)
         let host = NSHostingView(rootView: root)
         host.wantsLayer = true
         host.layer?.backgroundColor = NSColor.clear.cgColor
         panel.contentView = host
         installMonitors()
+        model.$expanded.removeDuplicates().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.layout() }
+        }.store(in: &cancellables)
     }
 
     func attach(to screen: NSScreen?) {
@@ -83,6 +91,17 @@ final class NotchController {
             handler(event)
             return event
         } as Any)
+        // The expanded board is pinned, so a click anywhere else is the way to dismiss it.
+        if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
+            MainActor.assumeIsolated { self?.clickedOutside(at: NSEvent.mouseLocation) }
+        }) {
+            monitors.append(m)
+        }
+    }
+
+    private func clickedOutside(at point: NSPoint) {
+        guard model.isOpen, model.expanded, !openRect.contains(point) else { return }
+        setOpen(false)
     }
 
     private func mouseMoved(to point: NSPoint) {
@@ -120,7 +139,17 @@ final class NotchController {
         guard model.isOpen != open else { return }
         model.isOpen = open
         panel.ignoresMouseEvents = !open
-        if !open { model.pinned = false }
+        if !open { model.pinned = false; model.expanded = false }
+    }
+
+    func toggleExpanded() {
+        if model.expanded {
+            model.expanded = false
+            return
+        }
+        if !model.isOpen { setOpen(true) }
+        model.expanded = true
+        model.pinned = true
     }
 
     func setPinnedOpen(_ open: Bool) {
