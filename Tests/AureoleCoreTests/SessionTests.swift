@@ -125,4 +125,30 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(TranscriptReader.short(1_240_000), "1.2M")
         XCTAssertEqual(TranscriptReader.short(812), "812")
     }
+
+    func testSpansFollowWorkAndWaits() {
+        var s = SessionReducer.apply(event("SessionStart"), to: nil, now: t0)
+        XCTAssertEqual(s.spans ?? [], [])
+        s = SessionReducer.apply(event("UserPromptSubmit", ["prompt": "x"]), to: s, now: t0 + 10)
+        s = SessionReducer.apply(event("PreToolUse", ["tool_name": "Bash"]), to: s, now: t0 + 20)
+        XCTAssertEqual(s.spans, [SessionSpan(start: t0 + 10, end: nil, kind: .working)])
+        s = SessionReducer.apply(event("Notification", ["notification_type": "permission_prompt"]), to: s, now: t0 + 30)
+        s = SessionReducer.apply(event("PreToolUse", ["tool_name": "AskUserQuestion"]), to: s, now: t0 + 35)   // still a wait
+        s = SessionReducer.apply(event("PostToolUse", ["tool_name": "Bash"]), to: s, now: t0 + 40)
+        s = SessionReducer.apply(event("Stop"), to: s, now: t0 + 50)
+        XCTAssertEqual(s.spans, [SessionSpan(start: t0 + 10, end: t0 + 30, kind: .working),
+                                 SessionSpan(start: t0 + 30, end: t0 + 40, kind: .waiting),
+                                 SessionSpan(start: t0 + 40, end: t0 + 50, kind: .working)])
+        // Hours later, the old spans are gone.
+        s = SessionReducer.apply(event("UserPromptSubmit", ["prompt": "y"]), to: s, now: t0 + 4 * 3600)
+        XCTAssertEqual(s.spans, [SessionSpan(start: t0 + 4 * 3600, end: nil, kind: .working)])
+    }
+
+    func testOldFilesWithoutSpansStillDecode() throws {
+        let s = SessionReducer.apply(event("Stop"), to: nil, now: t0)
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder.aureole.encode(s)) as! [String: Any]
+        json["spans"] = nil
+        let back = try JSONDecoder.aureole.decode(AgentSession.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertNil(back.spans)
+    }
 }

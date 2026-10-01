@@ -27,6 +27,9 @@ struct GeneralTab: View {
             Picker(L10n.t("Language"), selection: $settings.language) {
                 ForEach(Language.allCases, id: \.self) { Text($0.displayName).tag($0) }
             }
+            Picker(L10n.t("Panel layout"), selection: $settings.panelLayout) {
+                ForEach(PanelLayout.allCases, id: \.self) { Text($0.displayName).tag($0) }
+            }
             Picker(L10n.t("Panel background"), selection: $settings.panelStyle) {
                 ForEach(PanelStyle.allCases, id: \.self) { Text($0.displayName).tag($0) }
             }

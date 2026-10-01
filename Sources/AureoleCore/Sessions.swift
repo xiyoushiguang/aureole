@@ -37,6 +37,8 @@ public struct AgentSession: Codable, Equatable, Identifiable, Sendable {
     public var turns: Int = 0
     /// The last few tool calls, newest first. Optional so files written by older helpers still decode.
     public var recent: [SessionActivity]?
+    /// Working and waiting stretches over the last few hours, oldest first; the last one may still be open.
+    public var spans: [SessionSpan]?
 
     public var id: String { sessionId }
     public var projectName: String { (cwd as NSString).lastPathComponent }
@@ -53,8 +55,40 @@ public struct AgentSession: Codable, Equatable, Identifiable, Sendable {
 
     public mutating func set(_ new: SessionState, at now: Date) {
         if state != new { stateSince = now }
+        let kind = SpanKind(new)
+        if kind != spans?.last.flatMap({ $0.end == nil ? $0.kind : nil }) {
+            var list = spans ?? []
+            if let last = list.indices.last, list[last].end == nil { list[last].end = now }
+            if let kind { list.append(SessionSpan(start: now, end: nil, kind: kind)) }
+            let cutoff = now.addingTimeInterval(-SessionSpan.keep)
+            list.removeAll { ($0.end ?? now) < cutoff }
+            spans = list
+        }
         state = new
     }
+}
+
+public enum SpanKind: String, Codable, Sendable {
+    case working, waiting
+
+    init?(_ state: SessionState) {
+        switch state {
+        case .working: self = .working
+        case .waitingPermission, .waitingInput: self = .waiting
+        case .idle, .ended: return nil
+        }
+    }
+}
+
+/// One stretch of a session doing something (or waiting on you). `end == nil` means it is still going.
+public struct SessionSpan: Codable, Equatable, Sendable {
+    public var start: Date
+    public var end: Date?
+    public var kind: SpanKind
+    public init(start: Date, end: Date?, kind: SpanKind) { self.start = start; self.end = end; self.kind = kind }
+
+    /// Spans that ended longer ago than this are dropped; the timeline shows two hours of past.
+    public static let keep: TimeInterval = 3 * 3600
 }
 
 public struct SessionActivity: Codable, Equatable, Sendable {

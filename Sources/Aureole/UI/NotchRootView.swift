@@ -114,8 +114,36 @@ struct OpenNotchView: View {
     weak var actions: AppActions?
 
     var body: some View {
+        if settings.panelLayout == .horizon {
+            horizonBody
+        } else {
+            classicBody
+        }
+    }
+
+    private var horizonBody: some View {
         let notchH = model.geometry.notchRect.height
-        VStack(spacing: 0) {
+        return VStack(spacing: 0) {
+            header.frame(height: notchH)
+            if model.expanded {
+                HorizonBoard(store: store, sessions: sessions, settings: settings, width: model.openWidth, actions: actions)
+                    .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
+                    .transition(.opacity)
+            } else {
+                HorizonCompact(store: store, sessions: sessions, settings: settings, actions: actions)
+                    .padding(.top, 8)
+                footer.padding(.horizontal, 22).padding(.top, 4).padding(.bottom, 14)
+            }
+        }
+        .frame(width: model.openWidth, alignment: .top)
+        .background(GeometryReader { geo in
+            Color.clear.preference(key: OpenContentHeightKey.self, value: geo.size.height)
+        })
+    }
+
+    private var classicBody: some View {
+        let notchH = model.geometry.notchRect.height
+        return VStack(spacing: 0) {
             header.frame(height: notchH)
             VStack(spacing: 10) {
                 if settings.sessionsEnabled, !sessions.board.waiting.isEmpty {
