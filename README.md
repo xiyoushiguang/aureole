@@ -134,6 +134,10 @@ Layout:
 
 Adding a provider means one type conforming to `UsageProvider` and one case in `ProviderID`.
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 MIT. Aureole is not affiliated with Anthropic or OpenAI.

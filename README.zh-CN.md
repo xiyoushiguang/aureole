@@ -113,6 +113,10 @@ scripts/dev-cmd.sh open|close|refresh   # 遥控正在运行的 app，方便截�
 
 新增一家服务只需要一个遵循 `UsageProvider` 的类型，加上 `ProviderID` 里的一个 case。
 
+## 更新日志
+
+见 [CHANGELOG.md](CHANGELOG.md)。
+
 ## 许可
 
 MIT。Aureole 与 Anthropic、OpenAI 均无关联。
