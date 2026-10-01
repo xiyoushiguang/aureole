@@ -1,21 +1,40 @@
 # Aureole
 
-**Your AI coding quotas, as a halo around the MacBook notch.**
+**Your AI coding quotas and agent sessions, in the MacBook notch.**
+
+[简体中文](README.zh-CN.md)
 
 Aureole is a small native macOS app that shows how much of your Claude and Codex subscription
-you have left, right where your eyes already are. Two arcs of light hug the notch: one per
-provider, shrinking as the current window drains and lighting back up when it resets. Hover
-to see the numbers.
+you have left, and what each of your Claude Code sessions is doing, right where your eyes already
+are. Closed, two arcs of light hug the notch, one per provider, shrinking as the current window
+drains. Hover, and the panel drops down:
 
 ![closed](docs/screenshots/closed.png)
-![open](docs/screenshots/open.png)
+
+![open](docs/screenshots/horizon.png)
+
+**How to read it.** Time runs left to right along the edge of a planet, with **now** at the white
+sun.
+
+- **The arc is your quota.** The orange curve rising off the horizon is how much of the current
+  window you have used; the dashed line is where the current pace takes you; the faint line is
+  the steady pace that would land exactly on 100% at the reset. If the forecast hits 100% early,
+  the title turns amber (**Runs out 21:35**, *2h 45m before the 00:20 reset*) and the stretch with no
+  quota left is shaded.
+- **Each lane below is one session**, on the same clock. Left of the now line: when it was working
+  (orange) or waiting on you (amber) over the past two hours. On the now line: its light, with a
+  small ring for how full its context is. Right of it: its name, what it is doing or asking, how
+  long it has been running, and its context size.
+- **Sessions waiting on you come first**, highlighted, with how long they have waited. Click any
+  lane to jump to its terminal tab. Many sessions? The lanes scroll.
 
 ## What it shows
 
 - **5-hour session and weekly windows** for Claude (Claude Code sign-in) and Codex (Codex CLI sign-in),
   including per-model weekly limits when your plan has them.
-- **Pace bars.** The faint layer is the clock (how much of the window has elapsed); the bright layer is
-  your usage. Usage running ahead of the clock turns amber before you hit the wall.
+- **Sessions.** Every Claude Code session, waiting / working / idle, on one screen (see below).
+- **A plain layout too.** Settings → Panel layout → List swaps the picture for pace bars and a task
+  list in a narrower panel.
 - **Polite polling.** Once a minute while your numbers move, slowing to every five minutes when they don't; obeys `Retry-After` when a vendor asks for a pause, and shows the last known numbers meanwhile.
 - **Reset times** as both a countdown and a clock time: `4h 37m · 00:00`.
 - **Burn rate and forecast.** After a few minutes of samples: `≈12%/h · empty 14:12, before reset`.
@@ -72,24 +91,21 @@ switch to the direct Keychain API in Settings → Providers.
 These are the same unofficial endpoints the vendors' own CLIs use. If a vendor changes them,
 Aureole shows an error instead of a number until it is updated.
 
-## Sessions (preview)
+## Sessions
 
-Aureole can also show what your Claude Code sessions are doing. Turn it on in **Settings →
-Sessions → Install hooks**: it registers a small helper (`aureole-hook`) in `~/.claude/settings.json`
-for eight hook events, keeping any hooks you already have. From then on:
+Session lanes need a one-time setup: **Settings → Sessions → Install hooks**. That registers a
+small helper (`aureole-hook`) in `~/.claude/settings.json` for eight hook events, keeping any hooks
+you already have. Sessions are named by the title Claude Code gives the conversation.
 
-- A session that is waiting on you (a permission prompt or a question) appears as a pill at the top
-  of the panel; click it to bring that terminal window to the front.
-- Sessions that are working show as chips on a **Sessions** line, named by the title Claude Code
-  gives the conversation.
-- **Workbench ›** in the panel footer grows the panel downward with every session: waiting, working
-  and idle, each with its last few tool calls, folder and context size.
+Sessions and the horizon panel are on `main` and will ship in the next release; v0.1.0 has the
+usage bars only.
 
 Each session is one small file under `~/Library/Application Support/Aureole/sessions/` (mode 0600)
 holding the folder, state, current tool, terminal id and an optional 80-character prompt excerpt
 (switch it off in Settings). The title and context size are read from the tail of the session's
 own transcript and kept in memory only. The helper prints nothing and exits 0, so it can never block or change
-a session. Jumping to a Terminal or iTerm2 window uses Apple Events; macOS asks once.
+a session. Jumping to a Terminal or iTerm2 tab uses Apple Events; macOS asks once (the panel
+keeps working while it waits for your answer).
 
 ## Privacy
 
@@ -114,6 +130,7 @@ Layout:
 
 - `Sources/AureoleCore` — models, providers, decoders, burn-rate predictor, event detector,
   notification channels. Pure Foundation, unit-tested, reusable from a CLI.
+- `Sources/AureoleCore/Horizon.swift` — the horizon's geometry and time mapping, tested on its own.
 - `Sources/Aureole` — the AppKit/SwiftUI app: notch geometry, the floating panel, views, settings.
 
 Adding a provider means one type conforming to `UsageProvider` and one case in `ProviderID`.
