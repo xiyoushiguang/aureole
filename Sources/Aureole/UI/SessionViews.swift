@@ -1,195 +1,135 @@
 import SwiftUI
 import AureoleCore
 
-/// First layer: one line that only appears while a session is waiting on the user. Each pill jumps to its terminal.
-struct WaitingRow: View {
-    let waiting: [AgentSession]
-    let name: (AgentSession) -> String
-    weak var actions: AppActions?
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            HStack(spacing: 6) {
-                Circle().fill(Theme.amber).frame(width: 7, height: 7).shadow(color: Theme.amber.opacity(0.9), radius: 3)
-                Text(L10n.f("Waiting for you %d", waiting.count))
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.amber)
-            }
-            .frame(width: 84, alignment: .leading)
-            HStack(spacing: 8) {
-                ForEach(waiting.prefix(3)) { s in
-                    Button { actions?.jump(to: s) } label: {
-                        HStack(spacing: 8) {
-                            Text(SessionText.short(name(s))).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(.white)
-                            Text(SessionText.waitStatus(s)).font(.system(size: 10.5)).foregroundStyle(Color.white.opacity(0.72))
-                        }
-                        .padding(.horizontal, 10)
-                        .frame(height: 24)
-                        .background(Capsule().fill(Theme.amber.opacity(0.16)))
-                    }
-                    .buttonStyle(.plain)
-                    .help(s.waitingMessage ?? s.cwd)
-                }
-                if waiting.count > 3 {
-                    Text("+\(waiting.count - 3)").font(.system(size: 10.5)).foregroundStyle(Theme.dim)
-                }
-                Spacer(minLength: 0)
-            }
-        }
-    }
-}
-
-/// First layer: who is working right now, in one line. Click a chip to jump; the full board is one click away.
-struct SessionsRow: View {
-    let board: SessionBoard
-    let name: (AgentSession) -> String
-    weak var actions: AppActions?
-
-    var body: some View {
-        let active = board.working.count + board.idle.count
-        HStack(alignment: .center, spacing: 14) {
-            HStack(spacing: 6) {
-                Circle().fill(board.working.isEmpty ? Theme.faint : Color.white.opacity(0.7)).frame(width: 7, height: 7)
-                Text(L10n.f("Sessions %d", active))
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.92))
-            }
-            .frame(width: 84, alignment: .leading)
-            HStack(spacing: 8) {
-                ForEach(board.working.prefix(2)) { s in
-                    Button { actions?.jump(to: s) } label: {
-                        HStack(spacing: 6) {
-                            Circle().fill(Theme.accent(s.provider)).frame(width: 6, height: 6)
-                            Text(SessionText.short(name(s))).font(.system(size: 11.5, weight: .medium)).foregroundStyle(Color.white.opacity(0.92))
-                            Text(s.lastTool ?? L10n.t("thinking")).font(.system(size: 10.5)).foregroundStyle(Theme.dim)
-                        }
-                        .lineLimit(1)
-                        .padding(.horizontal, 10)
-                        .frame(height: 24)
-                        .background(Capsule().fill(Color.white.opacity(0.08)))
-                    }
-                    .buttonStyle(.plain)
-                    .help([s.cwd, s.lastDetail].compactMap { $0 }.joined(separator: "\n"))
-                }
-                if board.working.count > 2 {
-                    Text("+\(board.working.count - 2)").font(.system(size: 10.5)).foregroundStyle(Theme.dim)
-                }
-                if !board.idle.isEmpty {
-                    Text(L10n.f("Idle %d", board.idle.count)).font(.system(size: 10.5)).foregroundStyle(Theme.dim)
-                }
-                Spacer(minLength: 0)
-            }
-        }
-    }
-}
-
-/// Second layer: the session board, grown below the usage rows.
-struct WorkbenchSection: View {
+/// Every agent session in one list: the ones waiting on you first, then the busy ones, then idle.
+/// One click jumps to the session's terminal.
+struct TaskList: View {
     @ObservedObject var sessions: SessionStore
-    let hooksInstalled: Bool
+    let maxHeight: CGFloat
     weak var actions: AppActions?
-    @State private var selected: String?
-    @State private var showIdle = false
+    @State private var contentHeight: CGFloat = 0
 
     var body: some View {
         let b = sessions.board
-        VStack(alignment: .leading, spacing: 6) {
-            if b.isEmpty {
+        if b.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(L10n.t("No agent sessions right now.")).font(.system(size: 11)).foregroundStyle(Theme.dim)
-                if !hooksInstalled {
+                if sessions.hookStatus == .notInstalled {
                     Text(L10n.t("Install the Claude Code hooks in Settings → Sessions to see them here."))
                         .font(.system(size: 10.5)).foregroundStyle(Theme.amber)
                 }
             }
-            if !b.waiting.isEmpty {
-                label(L10n.f("Needs you %d", b.waiting.count), color: Theme.amber)
-                ForEach(b.waiting) { row($0) }
-            }
-            if !b.working.isEmpty {
-                label(L10n.f("Working %d", b.working.count), color: Theme.dim)
-                ForEach(b.working) { row($0) }
-            }
-            if !b.idle.isEmpty {
-                Button { showIdle.toggle() } label: {
-                    HStack {
-                        Text(L10n.f("Idle %d", b.idle.count)).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Theme.dim)
-                        Spacer()
-                        Text(showIdle ? "⌄" : "›").font(.system(size: 10.5)).foregroundStyle(Theme.dim)
-                    }
-                    .frame(height: 22)
-                    .contentShape(Rectangle())
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            ScrollView(.vertical, showsIndicators: contentHeight > maxHeight) {
+                VStack(alignment: .leading, spacing: 3) {
+                    group(L10n.f("Needs you %d", b.waiting.count), b.waiting, color: Theme.amber)
+                    group(L10n.f("Working %d", b.working.count), b.working, color: Color.white.opacity(0.62))
+                    group(L10n.f("Idle %d", b.idle.count), b.idle, color: Theme.dim)
                 }
-                .buttonStyle(.plain)
-                if showIdle { ForEach(b.idle) { row($0) } }
+                .background(GeometryReader { g in Color.clear.preference(key: TaskListHeightKey.self, value: g.size.height) })
             }
+            .frame(height: min(max(contentHeight, 1), maxHeight))
+            .onPreferenceChange(TaskListHeightKey.self) { contentHeight = $0 }
         }
-        .onAppear {
-            if selected == nil { selected = (b.waiting.first ?? b.working.first)?.id }
-        }
-    }
-
-    private func label(_ text: String, color: Color) -> some View {
-        Text(text).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(color).padding(.top, 2)
     }
 
     @ViewBuilder
-    private func row(_ s: AgentSession) -> some View {
-        let open = selected == s.id
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                selected = open ? nil : s.id
-            } label: {
-                HStack(spacing: 8) {
-                    Circle().fill(SessionText.dot(s)).frame(width: 7, height: 7)
-                    Text(sessions.name(of: s)).font(.system(size: 13, weight: s.state.needsYou ? .semibold : .regular))
-                        .foregroundStyle(Color.white.opacity(0.92)).lineLimit(1)
-                    Text(SessionText.status(s)).font(.system(size: 10.5))
-                        .foregroundStyle(s.state.needsYou ? Theme.amber : Theme.dim).lineLimit(1)
-                    Spacer(minLength: 8)
-                    Text(SessionText.meta(s, context: sessions.context[s.id])).font(.system(size: 10.5).monospacedDigit()).foregroundStyle(Theme.dim).lineLimit(1)
-                    Text(open ? "⌄" : "›").font(.system(size: 10.5)).foregroundStyle(Theme.dim)
-                }
-                .frame(height: 24)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            if open {
-                VStack(alignment: .leading, spacing: 6) {
-                    if let m = s.waitingMessage {
-                        detail(L10n.t("Requesting"), m, mono: true)
-                    }
-                    if let p = s.promptPreview, !p.isEmpty { detail(L10n.t("Prompt"), p, mono: false) }
-                    if let recent = s.recent, !recent.isEmpty {
-                        ForEach(Array(recent.enumerated()), id: \.offset) { _, a in
-                            detail(SessionText.ago(a.at), a.text, mono: false)
-                        }
-                    } else if let t = s.lastTool {
-                        detail(L10n.t("Last"), [t, s.lastDetail].compactMap { $0 }.joined(separator: " · "), mono: false)
-                    }
-                    detail(L10n.t("Folder"), s.cwd, mono: false)
-                    Button { actions?.jump(to: s) } label: {
-                        Text(L10n.t("Jump to terminal"))
-                            .font(.system(size: 11.5, weight: .semibold)).foregroundStyle(.black)
-                            .padding(.horizontal, 14).frame(height: 26)
-                            .background(Capsule().fill(Color.white))
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.leading, 15)
-                .padding(.bottom, 4)
-            }
+    private func group(_ title: String, _ list: [AgentSession], color: Color) -> some View {
+        if !list.isEmpty {
+            Text(title).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(color)
+                .padding(.top, 4).padding(.leading, 2)
+            ForEach(list) { TaskRow(session: $0, sessions: sessions, actions: actions) }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, open ? 4 : 0)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(open ? 0.08 : 0)))
+    }
+}
+
+private struct TaskListHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// Two lines per session: name and state, then what it is doing and for how long.
+struct TaskRow: View {
+    let session: AgentSession
+    @ObservedObject var sessions: SessionStore
+    weak var actions: AppActions?
+    @State private var hovered = false
+
+    var body: some View {
+        let s = session
+        let waiting = s.state.needsYou
+        Button { actions?.jump(to: s) } label: {
+            HStack(alignment: .top, spacing: 10) {
+                Circle().fill(SessionText.dot(s)).frame(width: 8, height: 8)
+                    .shadow(color: waiting ? Theme.amber.opacity(0.9) : .clear, radius: 4)
+                    .padding(.top, 5)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 8) {
+                        Text(sessions.name(of: s))
+                            .font(.system(size: 13, weight: waiting ? .semibold : .medium))
+                            .foregroundStyle(Color.white.opacity(s.state == .idle ? 0.6 : 0.95))
+                        Spacer(minLength: 8)
+                        badge(s)
+                    }
+                    HStack(spacing: 8) {
+                        Text(doing(s))
+                            .font(waiting ? .system(size: 11, design: .monospaced) : .system(size: 11))
+                            .foregroundStyle(waiting ? Theme.amber.opacity(0.9) : Theme.dim)
+                        Spacer(minLength: 8)
+                        Text(meta(s)).font(.system(size: 10.5).monospacedDigit()).foregroundStyle(Theme.dim)
+                    }
+                }
+                .lineLimit(1)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 10).fill(
+                waiting ? Theme.amber.opacity(hovered ? 0.16 : 0.10) : Color.white.opacity(hovered ? 0.07 : 0)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+        .help([s.cwd, s.promptPreview].compactMap { $0 }.joined(separator: "\n"))
     }
 
-    private func detail(_ key: String, _ value: String, mono: Bool) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Text(key).font(.system(size: 10.5)).foregroundStyle(Color.white.opacity(0.62)).frame(width: 52, alignment: .leading)
-            Text(value).font(mono ? .system(size: 10.5, design: .monospaced) : .system(size: 10.5))
-                .foregroundStyle(Color.white.opacity(0.86)).lineLimit(2)
+    @ViewBuilder
+    private func badge(_ s: AgentSession) -> some View {
+        switch s.state {
+        case .waitingPermission, .waitingInput:
+            Text(SessionText.waitStatus(s))
+                .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Color(red: 0.10, green: 0.07, blue: 0.02))
+                .padding(.horizontal, 8).padding(.vertical, 2)
+                .background(Capsule().fill(Theme.amber))
+        case .working:
+            Text(L10n.t("working")).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Theme.accent(s.provider))
+        case .idle, .ended:
+            Text(L10n.t("idle") + " " + Formatting.countdown(Date().timeIntervalSince(s.stateSince)))
+                .font(.system(size: 10.5)).foregroundStyle(Theme.dim)
         }
+    }
+
+    /// What it is doing (or asking) right now, in one line.
+    private func doing(_ s: AgentSession) -> String {
+        switch s.state {
+        case .waitingPermission, .waitingInput:
+            return s.waitingMessage ?? s.lastDetail ?? L10n.t("Waiting on you")
+        case .working:
+            if let t = s.lastTool { return [t, s.lastDetail].compactMap { $0 }.joined(separator: " · ") }
+            return L10n.t("thinking")
+        case .idle, .ended:
+            return s.promptPreview.map { L10n.f("Last: %@", $0) } ?? (s.cwd as NSString).abbreviatingWithTildeInPath
+        }
+    }
+
+    /// "Codex · 38m · context 41%"
+    private func meta(_ s: AgentSession) -> String {
+        var parts: [String] = []
+        if s.provider == .codex { parts.append("Codex") }
+        parts.append(Formatting.countdown(Date().timeIntervalSince(s.startedAt)))
+        if let tokens = sessions.context[s.id] {
+            parts.append(L10n.f("context %d%%", Int((ContextGauge.fraction(tokens: tokens) * 100).rounded())))
+        }
+        return parts.joined(separator: " · ")
     }
 }
 

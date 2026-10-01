@@ -13,18 +13,6 @@ enum PanelStyle: String, Codable, CaseIterable {
     }
 }
 
-/// What the open panel looks like: the horizon picture, or the original rows of bars.
-enum PanelLayout: String, Codable, CaseIterable {
-    case horizon, classic
-
-    var displayName: String {
-        switch self {
-        case .horizon: return L10n.t("Horizon")
-        case .classic: return L10n.t("Classic bars")
-        }
-    }
-}
-
 @MainActor
 final class SettingsStore: ObservableObject {
     private let defaults = UserDefaults.standard
@@ -38,7 +26,8 @@ final class SettingsStore: ObservableObject {
     @Published var routingHints: Bool { didSet { defaults.set(routingHints, forKey: "routingHints") } }
     @Published var nativeNotifications: Bool { didSet { defaults.set(nativeNotifications, forKey: "nativeNotifications") } }
     @Published var panelStyle: PanelStyle { didSet { defaults.set(panelStyle.rawValue, forKey: "panelStyle") } }
-    @Published var panelLayout: PanelLayout { didSet { defaults.set(panelLayout.rawValue, forKey: "panelLayout") } }
+    /// Draw the horizon timeline under the task list (widens the panel).
+    @Published var showHorizon: Bool { didSet { defaults.set(showHorizon, forKey: "showHorizon") } }
     @Published var sessionsEnabled: Bool { didSet { defaults.set(sessionsEnabled, forKey: "sessionsEnabled") } }
     /// The hook helper reads this key too (via the app's defaults domain) to decide whether to keep a prompt excerpt.
     @Published var sessionPromptPreview: Bool { didSet { defaults.set(sessionPromptPreview, forKey: "sessionPromptPreview") } }
@@ -63,7 +52,7 @@ final class SettingsStore: ObservableObject {
         claudeCredentialSource = ClaudeCredentialSource(rawValue: d.string(forKey: "claudeCredentialSource") ?? "") ?? .securityCLI
         language = Language(rawValue: d.string(forKey: "language") ?? "") ?? .system
         panelStyle = PanelStyle(rawValue: d.string(forKey: "panelStyle") ?? "") ?? .solid
-        panelLayout = PanelLayout(rawValue: d.string(forKey: "panelLayout") ?? "") ?? .horizon
+        showHorizon = d.object(forKey: "showHorizon") as? Bool ?? false
         sessionsEnabled = d.object(forKey: "sessionsEnabled") as? Bool ?? true
         sessionPromptPreview = d.object(forKey: "sessionPromptPreview") as? Bool ?? true
         if let data = try? Data(contentsOf: channelsURL),

@@ -23,7 +23,6 @@ struct NotchRootView: View {
         .frame(width: size.width, height: size.height)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(.spring(response: 0.36, dampingFraction: 0.84), value: model.isOpen)
-        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: model.expanded)
         .animation(.easeOut(duration: 0.18), value: model.openContentHeight)
         .id(settings.language)
         .onPreferenceChange(OpenContentHeightKey.self) { h in
@@ -113,45 +112,38 @@ struct OpenNotchView: View {
     @ObservedObject var settings: SettingsStore
     weak var actions: AppActions?
 
-    /// The horizon hangs below the usage rows when the workbench is open; the classic layout lists sessions instead.
-    private var horizonBelow: Bool { model.expanded && settings.panelLayout == .horizon }
-
     var body: some View {
         let notchH = model.geometry.notchRect.height
         VStack(spacing: 0) {
             header.frame(height: notchH)
             VStack(spacing: 10) {
-                if settings.sessionsEnabled, !sessions.board.waiting.isEmpty {
-                    WaitingRow(waiting: sessions.board.waiting, name: sessions.name(of:), actions: actions)
-                    Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
-                }
                 ForEach(enabledProviders) { provider in
                     ProviderRow(provider: provider, store: store)
                 }
-                if settings.sessionsEnabled, !model.expanded, !(sessions.board.working.isEmpty && sessions.board.idle.isEmpty) {
+                if settings.sessionsEnabled {
                     Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
-                    SessionsRow(board: sessions.board, name: sessions.name(of:), actions: actions)
+                    TaskList(sessions: sessions, maxHeight: taskListMax, actions: actions)
                 }
-                if model.expanded, !horizonBelow {
-                    Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
-                    WorkbenchSection(sessions: sessions, hooksInstalled: sessions.hookStatus != .notInstalled, actions: actions)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-                if !horizonBelow { footer }
             }
             .padding(.horizontal, 22)
             .padding(.top, 10)
-            .padding(.bottom, horizonBelow ? 4 : 14)
-            if horizonBelow {
+            .padding(.bottom, settings.showHorizon ? 4 : 10)
+            if settings.showHorizon {
                 HorizonBoard(store: store, sessions: sessions, settings: settings, width: model.openWidth, actions: actions)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                footer.padding(.horizontal, 22).padding(.top, 6).padding(.bottom, 14)
             }
+            footer.padding(.horizontal, 22).padding(.top, 4).padding(.bottom, 14)
         }
         .frame(width: model.openWidth, alignment: .top)
         .background(GeometryReader { geo in
             Color.clear.preference(key: OpenContentHeightKey.self, value: geo.size.height)
         })
+    }
+
+    /// Whatever height the rows and (optional) horizon leave; past that the task list scrolls.
+    private var taskListMax: CGFloat {
+        let rows = CGFloat(enabledProviders.count) * 90 + 110
+        let horizon = settings.showHorizon ? (600 - HorizonBoard.cropTop) * model.openWidth / 1000 : 0
+        return max(160, model.maxOpenHeight - rows - horizon)
     }
 
     private var enabledProviders: [ProviderID] {
@@ -193,13 +185,6 @@ struct OpenNotchView: View {
             Button(L10n.t("Refresh")) { actions?.refreshNow() }
             Button(L10n.t("Settings…")) { actions?.openSettings() }
             Spacer()
-            if settings.sessionsEnabled {
-                if model.expanded {
-                    Text(L10n.t("Click outside to collapse")).foregroundStyle(Theme.faint)
-                }
-                Button(L10n.t(model.expanded ? "‹ Collapse" : "Workbench ›")) { actions?.toggleWorkbench() }
-                    .foregroundStyle(Color.white.opacity(0.78))
-            }
             Button(L10n.t(model.pinned ? "Unpin" : "Pin")) { actions?.togglePinned() }
         }
         .buttonStyle(.plain)

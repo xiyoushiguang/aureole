@@ -7,7 +7,6 @@ protocol AppActions: AnyObject {
     func openSettings()
     func refreshNow()
     func togglePinned()
-    func toggleWorkbench()
     func jump(to session: AgentSession)
     func quit()
 }
@@ -36,12 +35,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
         installDebugCommands()
     }
 
-    /// `scripts/dev-cmd.sh open|close|expand|refresh|hooks-install|hooks-remove` posts these; handy for screenshots and tests.
+    /// `scripts/dev-cmd.sh open|close|refresh|hooks-install|hooks-remove` posts these; handy for screenshots and tests.
     private func installDebugCommands() {
         let center = DistributedNotificationCenter.default()
         for (name, action) in [("app.aureole.open", { [weak self] in self?.notch?.setPinnedOpen(true) }),
                                ("app.aureole.close", { [weak self] in self?.notch?.setPinnedOpen(false) }),
-                               ("app.aureole.expand", { [weak self] in self?.notch?.toggleExpanded() }),
                                ("app.aureole.hooks-install", { [weak self] in self?.sessions.installHooks() }),
                                ("app.aureole.hooks-remove", { [weak self] in self?.sessions.uninstallHooks() }),
                                ("app.aureole.refresh", { [weak self] in self?.refreshNow() })] as [(String, () -> Void)] {
@@ -72,7 +70,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
 
     func refreshNow() { store.refreshAll(force: true) }
     func togglePinned() { notch?.togglePinned() }
-    func toggleWorkbench() { notch?.toggleExpanded() }
     func jump(to session: AgentSession) {
         notch?.setPinnedOpen(false)
         sessions.jump(to: session)

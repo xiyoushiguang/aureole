@@ -7,26 +7,21 @@ import AureoleCore
 final class NotchViewModel: ObservableObject {
     @Published var isOpen = false
     @Published var pinned = false
-    /// Second layer: the session board grown below the usage rows. Always pinned while expanded.
-    @Published var expanded = false
     @Published var geometry = NotchGeometry.placeholder
 
     /// Concave "ears" at the top corners. Zero in both states: nothing may stick out over the menu bar,
-    /// and the expanded panel simply hangs from the screen edge with square top corners.
+    /// and the open panel simply hangs from the screen edge with square top corners.
     let openEar: CGFloat = 0
     var ear: CGFloat { isOpen ? openEar : 0 }
     /// How far the closed shape hangs below the notch: just enough for the halo.
     let closedDrop: CGFloat = 6
     /// Invisible margin around the notch that also triggers the hover.
     let hoverMargin: CGFloat = 20
-    /// Horizon layout (vs. classic bars): the workbench grows the horizon below the rows, so it needs the width.
-    @Published var horizon = true
-    var openWidth: CGFloat {
-        guard expanded, horizon else { return 580 }
-        return min(1000, geometry.screenFrame.width - 80)
-    }
+    /// The optional horizon under the task list needs a much wider panel.
+    @Published var horizon = false
+    var openWidth: CGFloat { horizon ? min(1000, geometry.screenFrame.width - 80) : 580 }
     /// Envelope the panel window is sized to; the drawn shape is smaller.
-    var maxOpenHeight: CGFloat { expanded ? (horizon ? min(900, geometry.screenFrame.height - 40) : 760) : 360 }
+    var maxOpenHeight: CGFloat { min(horizon ? 900 : 760, geometry.screenFrame.height - 40) }
     @Published var openContentHeight: CGFloat = 200
     var openSize: CGSize { CGSize(width: openWidth, height: min(maxOpenHeight, openContentHeight)) }
 
@@ -52,11 +47,8 @@ final class NotchController {
         host.layer?.backgroundColor = NSColor.clear.cgColor
         panel.contentView = host
         installMonitors()
-        model.$expanded.removeDuplicates().sink { [weak self] _ in
-            DispatchQueue.main.async { self?.layout() }
-        }.store(in: &cancellables)
-        settings.$panelLayout.removeDuplicates().sink { [weak self] layout in
-            self?.model.horizon = layout == .horizon
+        settings.$showHorizon.removeDuplicates().sink { [weak self] on in
+            self?.model.horizon = on
             DispatchQueue.main.async { self?.layout() }
         }.store(in: &cancellables)
     }
@@ -82,7 +74,7 @@ final class NotchController {
                       width: n.width + 2 * model.hoverMargin, height: n.height + model.closedDrop + 10)
     }
 
-    /// Screen-space rect of the expanded panel.
+    /// Screen-space rect of the open panel.
     private var openRect: CGRect {
         let g = model.geometry
         let s = model.openSize
@@ -100,17 +92,6 @@ final class NotchController {
             handler(event)
             return event
         } as Any)
-        // The expanded board is pinned, so a click anywhere else is the way to dismiss it.
-        if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
-            MainActor.assumeIsolated { self?.clickedOutside(at: NSEvent.mouseLocation) }
-        }) {
-            monitors.append(m)
-        }
-    }
-
-    private func clickedOutside(at point: NSPoint) {
-        guard model.isOpen, model.expanded, !openRect.contains(point) else { return }
-        setOpen(false)
     }
 
     private func mouseMoved(to point: NSPoint) {
@@ -148,17 +129,7 @@ final class NotchController {
         guard model.isOpen != open else { return }
         model.isOpen = open
         panel.ignoresMouseEvents = !open
-        if !open { model.pinned = false; model.expanded = false }
-    }
-
-    func toggleExpanded() {
-        if model.expanded {
-            model.expanded = false
-            return
-        }
-        if !model.isOpen { setOpen(true) }
-        model.expanded = true
-        model.pinned = true
+        if !open { model.pinned = false }
     }
 
     func setPinnedOpen(_ open: Bool) {
