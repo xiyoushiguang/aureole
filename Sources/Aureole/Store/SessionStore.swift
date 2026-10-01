@@ -232,9 +232,30 @@ enum TerminalJumper {
         }
     }
 
+    /// Runs in a separate osascript process: an Apple Event to a busy terminal, or one waiting behind an
+    /// Automation permission prompt, can block for minutes, and doing that on the main thread froze the panel.
     private static func run(script: String) {
-        var error: NSDictionary?
-        NSAppleScript(source: script)?.executeAndReturnError(&error)
-        if let error { AureoleLog.shared.log("terminal jump failed: \(error)") }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        p.arguments = ["-e", script]
+        let err = Pipe()
+        p.standardError = err
+        p.standardOutput = FileHandle.nullDevice
+        p.terminationHandler = { proc in
+            guard proc.terminationStatus != 0 else { return }
+            let msg = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            AureoleLog.shared.log("terminal jump failed: \(msg.trimmingCharacters(in: .whitespacesAndNewlines))")
+        }
+        do {
+            try p.run()
+        } catch {
+            AureoleLog.shared.log("terminal jump failed: \(error.localizedDescription)")
+            return
+        }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {
+            guard p.isRunning else { return }
+            p.terminate()
+            AureoleLog.shared.log("terminal jump timed out (is Automation permission for the terminal pending?)")
+        }
     }
 }
