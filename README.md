@@ -36,7 +36,7 @@ Requires macOS 14 or later on Apple silicon. A universal build for Intel compile
 ### Build from source
 
 ```bash
-git clone https://github.com/qianqianob/aureole.git
+git clone https://github.com/xiyoushiguang/aureole.git
 cd aureole
 scripts/build-app.sh          # → build/Aureole.app
 open build/Aureole.app
