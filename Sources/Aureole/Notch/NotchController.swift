@@ -19,14 +19,14 @@ final class NotchViewModel: ObservableObject {
     let closedDrop: CGFloat = 6
     /// Invisible margin around the notch that also triggers the hover.
     let hoverMargin: CGFloat = 20
-    /// Horizon layout (vs. classic bars); the horizon's second layer is much wider.
+    /// Horizon layout (vs. classic bars): the workbench grows the horizon below the rows, so it needs the width.
     @Published var horizon = true
     var openWidth: CGFloat {
         guard expanded, horizon else { return 580 }
         return min(1000, geometry.screenFrame.width - 80)
     }
     /// Envelope the panel window is sized to; the drawn shape is smaller.
-    var maxOpenHeight: CGFloat { expanded ? 760 : (horizon ? 420 : 360) }
+    var maxOpenHeight: CGFloat { expanded ? (horizon ? min(900, geometry.screenFrame.height - 40) : 760) : 360 }
     @Published var openContentHeight: CGFloat = 200
     var openSize: CGSize { CGSize(width: openWidth, height: min(maxOpenHeight, openContentHeight)) }
 

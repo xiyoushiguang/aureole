@@ -1,14 +1,12 @@
 import SwiftUI
 import AureoleCore
 
-/// Inputs both horizon layers share: which window rides the horizon and what sits in the corner.
+/// Which window rides the horizon, with its history and forecast.
 struct HorizonInputs {
     let main: ProviderID
     let window: UsageWindow?
     let prediction: Prediction?
     let samples: [Sample]
-    /// The other provider, shown as a number in the top-right corner.
-    let side: ProviderID?
 
     @MainActor
     init(store: UsageStore, settings: SettingsStore) {
@@ -19,7 +17,6 @@ struct HorizonInputs {
         window = store.snapshots[main]?.primary
         prediction = store.predictions[main]
         samples = window.map { store.history.samples(provider: main, key: $0.key) } ?? []
-        side = enabled.first { $0 != main }
     }
 
     func scene(_ layout: HorizonLayout, now: Date, board: SessionBoard) -> HorizonScene {
@@ -61,8 +58,9 @@ struct HorizonCanvas: View {
         let full = L.maxOrbits > 3
 
         if sky {
+            // Fades in from the rows above so it sits on either panel background without a seam.
             ctx.fill(Path(CGRect(x: 0, y: 0, width: L.width, height: L.height)),
-                     with: .linearGradient(Gradient(colors: [Color(hex: 0x05060C), Color(hex: 0x0B1428)]),
+                     with: .linearGradient(Gradient(colors: [Color(hex: 0x05060C).opacity(0), Color(hex: 0x0B1428).opacity(0.9)]),
                                            startPoint: .zero, endPoint: CGPoint(x: 0, y: L.height)))
         }
 
@@ -231,30 +229,29 @@ extension Color {
 struct SessionLight: View {
     let orbit: HorizonOrbit
     let context: Double?
-    var compact = false
     @State private var pulse = false
 
     var body: some View {
         let color = HorizonColor.dot(orbit)
-        let r: CGFloat = compact ? 7 : 11
+        let r: CGFloat = 11
         ZStack {
             if orbit.role == .waiting {
                 Circle().stroke(Theme.amber.opacity(0.45), lineWidth: 1.5)
-                    .frame(width: (compact ? 11 : 18) * 2, height: (compact ? 11 : 18) * 2)
+                    .frame(width: 18 * 2, height: 18 * 2)
                     .scaleEffect(pulse ? 1.18 : 0.94)
                     .opacity(pulse ? 0.35 : 1)
-                Circle().fill(Theme.amber.opacity(0.6)).frame(width: r * 2.4, height: r * 2.4).blur(radius: compact ? 3 : 5)
+                Circle().fill(Theme.amber.opacity(0.6)).frame(width: r * 2.4, height: r * 2.4).blur(radius: 5)
             }
             if orbit.role == .idle {
                 Circle().fill(color).frame(width: 10, height: 10)
             } else if orbit.session.provider == .codex || context == nil {
                 Circle().fill(color.opacity(0.6)).frame(width: r * 1.6, height: r * 1.6).blur(radius: 4)
-                Circle().fill(color).frame(width: compact ? 8 : 12, height: compact ? 8 : 12)
+                Circle().fill(color).frame(width: 12, height: 12)
             } else {
                 Circle().fill(Color(hex: 0x05060C)).frame(width: r * 2, height: r * 2)
-                Circle().stroke(Color.white.opacity(0.2), lineWidth: compact ? 2 : 3).frame(width: r * 2, height: r * 2)
+                Circle().stroke(Color.white.opacity(0.2), lineWidth: 3).frame(width: r * 2, height: r * 2)
                 Circle().trim(from: 0, to: context ?? 0)
-                    .stroke(Color.white, style: StrokeStyle(lineWidth: compact ? 2 : 3, lineCap: .round))
+                    .stroke(Color.white, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .frame(width: r * 2, height: r * 2)
                 Circle().fill(color).frame(width: r, height: r)
@@ -271,7 +268,7 @@ struct SessionLight: View {
 
 // MARK: - Second layer
 
-/// The full horizon: a 1000×600 picture (scaled to fit) with session lights, a summary and a details card.
+/// The horizon under the usage rows: a 1000×600 picture (scaled, top cropped) with session lights and a details card.
 struct HorizonBoard: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var sessions: SessionStore
@@ -282,13 +279,19 @@ struct HorizonBoard: View {
     @State private var hoveringDot: String?
     @State private var hoveringCard = false
 
-    var height: CGFloat { width * 0.6 }
+    /// The top of the 1000×600 picture only held the headline, which the usage rows above now carry.
+    static let cropTop: CGFloat = 78
+
+    var scale: CGFloat { width / 1000 }
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 20)) { ctx in
             content(now: ctx.date)
+                .frame(width: width, height: width * 0.6)
+                .offset(y: -Self.cropTop * scale)
         }
-        .frame(width: width, height: height)
+        .frame(width: width, height: (600 - Self.cropTop) * scale, alignment: .top)
+        .clipped()
     }
 
     @ViewBuilder
@@ -301,15 +304,6 @@ struct HorizonBoard: View {
             HorizonCanvas(scene: scene)
             ForEach(scene.orbits) { o in
                 light(o, scene: scene, scale: s)
-            }
-            HorizonHeadlineView(inputs: inputs, store: store, large: true)
-                .padding(.leading, 28).padding(.top, 22)
-            SideNumber(inputs: inputs, store: store, large: true)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.trailing, 28).padding(.top, 26)
-            if !board.waiting.isEmpty {
-                WaitingCapsule(waiting: board.waiting, name: sessions.name(of:), actions: actions)
-                    .frame(maxWidth: .infinity).padding(.top, 19)
             }
             if let id = focus, let o = scene.orbits.first(where: { $0.id == id }) {
                 SessionCard(session: o.session, name: sessions.name(of: o.session), context: sessions.context[id], actions: actions)
@@ -324,7 +318,7 @@ struct HorizonBoard: View {
                     .font(.system(size: 11)).foregroundStyle(Theme.amber)
                     .position(x: width / 2, y: 260 * s)
             }
-            legend.frame(maxHeight: .infinity, alignment: .bottom).padding(.horizontal, 24).padding(.bottom, 14)
+            legend.frame(maxHeight: .infinity, alignment: .bottom).padding(.horizontal, 24).padding(.bottom, 8)
         }
         .animation(.easeOut(duration: 0.15), value: focus)
     }
@@ -359,8 +353,6 @@ struct HorizonBoard: View {
 
     private var legend: some View {
         HStack(spacing: 14) {
-            Button(L10n.t("Refresh")) { actions?.refreshNow() }
-            Button(L10n.t("Settings…")) { actions?.openSettings() }
             Spacer()
             key(Theme.claude, L10n.t("Claude working"))
             key(Theme.codex, L10n.t("Codex working"))
@@ -371,9 +363,7 @@ struct HorizonBoard: View {
                 Text(L10n.t("Small ring = context used"))
             }
             .help(L10n.t("Context %% is an estimate (200k or 1M window)."))
-            Button(L10n.t("‹ Collapse")) { actions?.toggleWorkbench() }.foregroundStyle(Color.white.opacity(0.78))
         }
-        .buttonStyle(.plain)
         .font(.system(size: 10.5, weight: .medium))
         .foregroundStyle(HorizonColor.label)
     }
@@ -392,28 +382,17 @@ struct SessionLabel: View {
     let name: String
     let context: Double?
     let role: HorizonOrbit.Role
-    var compact = false
 
     var body: some View {
         let waiting = role == .waiting
-        if compact {
-            HStack(spacing: 6) {
-                Text(SessionText.short(name)).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.92))
-                Text(status).font(.system(size: 10, weight: waiting ? .semibold : .regular))
-                    .foregroundStyle(waiting ? Theme.amber : HorizonColor.label)
-                    .truncationMode(.tail)
-            }
-            .lineLimit(1)
-        } else {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(name).font(.system(size: waiting ? 13 : 12, weight: waiting ? .semibold : .regular))
-                    .foregroundStyle(.white.opacity(waiting ? 1 : 0.92))
-                Text(status).font(.system(size: waiting ? 11 : 10, weight: waiting ? .semibold : .regular))
-                    .foregroundStyle(waiting ? Theme.amber : HorizonColor.label)
-            }
-            .lineLimit(1)
-            .frame(maxWidth: 300, alignment: .leading)
+        VStack(alignment: .leading, spacing: 1) {
+            Text(name).font(.system(size: waiting ? 13 : 12, weight: waiting ? .semibold : .regular))
+                .foregroundStyle(.white.opacity(waiting ? 1 : 0.92))
+            Text(status).font(.system(size: waiting ? 11 : 10, weight: waiting ? .semibold : .regular))
+                .foregroundStyle(waiting ? Theme.amber : HorizonColor.label)
         }
+        .lineLimit(1)
+        .frame(maxWidth: 300, alignment: .leading)
     }
 
     private var status: String {
@@ -421,10 +400,10 @@ struct SessionLabel: View {
         if session.provider == .codex { parts.append("Codex") }
         if session.state.needsYou {
             parts.append(SessionText.waitStatus(session))
-            if !compact, let m = session.waitingMessage { parts.append(m) }
+            if let m = session.waitingMessage { parts.append(m) }
         } else {
             parts.append(SessionText.status(session))
-            if !compact, let c = context { parts.append(L10n.f("context %d%%", Int((c * 100).rounded()))) }
+            if let c = context { parts.append(L10n.f("context %d%%", Int((c * 100).rounded()))) }
         }
         return parts.joined(separator: " · ")
     }
@@ -495,169 +474,6 @@ struct SessionCard: View {
             Text(key).font(.system(size: 11)).foregroundStyle(HorizonColor.label).frame(width: 52, alignment: .leading)
             Text(value).font(mono ? .system(size: 11, design: .monospaced) : .system(size: 11))
                 .foregroundStyle(.white.opacity(0.86)).lineLimit(2)
-        }
-    }
-}
-
-/// "Waiting for you 2" with one button per waiting session; a click jumps to its terminal.
-struct WaitingCapsule: View {
-    let waiting: [AgentSession]
-    let name: (AgentSession) -> String
-    weak var actions: AppActions?
-    var compact = false
-
-    var body: some View {
-        HStack(spacing: compact ? 8 : 10) {
-            Circle().fill(Theme.amber).frame(width: 8, height: 8).shadow(color: Theme.amber.opacity(0.9), radius: 4)
-            Text(L10n.f("Needs you %d", waiting.count))
-                .font(.system(size: compact ? 12 : 13, weight: .semibold)).foregroundStyle(Theme.amber)
-            ForEach(waiting.prefix(compact ? 2 : 4)) { s in
-                Button { actions?.jump(to: s) } label: {
-                    Text(SessionText.short(name(s)) + " ›")
-                        .font(.system(size: compact ? 11 : 12, weight: .semibold)).foregroundStyle(.white)
-                        .padding(.horizontal, compact ? 10 : 12).frame(height: compact ? 22 : 28)
-                        .background(Capsule().fill(Theme.amber.opacity(0.22)))
-                }
-                .buttonStyle(.plain)
-                .help(s.waitingMessage ?? s.cwd)
-            }
-            if waiting.count > (compact ? 2 : 4) {
-                Text("+\(waiting.count - (compact ? 2 : 4))").font(.system(size: 11)).foregroundStyle(Theme.amber)
-            }
-        }
-        .padding(.leading, 14).padding(.trailing, 8)
-        .frame(height: compact ? 30 : 40)
-        .background(Capsule().fill(Theme.amber.opacity(0.16)))
-    }
-}
-
-/// The conclusion first, then the numbers behind it.
-struct HorizonHeadlineView: View {
-    let inputs: HorizonInputs
-    @ObservedObject var store: UsageStore
-    var large: Bool
-
-    var body: some View {
-        let h = HorizonHeadline(provider: inputs.main, window: inputs.window, prediction: inputs.prediction)
-        let status = store.status[inputs.main] ?? .idle
-        let color: Color = switch h.tone {
-        case .warning: Theme.amber
-        case .fine: inputs.main == .claude ? HorizonColor.claudeBright : HorizonColor.codexBright
-        case .unknown: .white.opacity(0.9)
-        }
-        VStack(alignment: .leading, spacing: large ? 4 : 2) {
-            Text(h.title)
-                .font(.system(size: large ? (h.tone == .fine ? 26 : 38) : (h.tone == .fine ? 17 : 22), weight: .bold).monospacedDigit())
-                .foregroundStyle(color)
-            if let sub = h.subtitle {
-                Text(sub).font(.system(size: large ? 12.5 : 11).monospacedDigit()).foregroundStyle(.white.opacity(0.86))
-            }
-            if let d = h.detail {
-                Text(d).font(.system(size: large ? 11.5 : 10.5).monospacedDigit()).foregroundStyle(HorizonColor.label)
-            }
-            if inputs.window == nil || status.message != nil {
-                Text(placeholder(status)).font(.system(size: 11)).foregroundStyle(status.message == nil ? HorizonColor.label : Theme.amber)
-                    .lineLimit(2)
-            }
-        }
-        .lineLimit(1)
-    }
-
-    private func placeholder(_ status: ProviderStatus) -> String {
-        switch status {
-        case .idle, .loading: return L10n.t("Loading…")
-        case .ok: return L10n.t("No windows reported")
-        case .rateLimited: return L10n.t("Rate limited")
-        case .signedOut(let m), .error(let m): return m
-        }
-    }
-}
-
-/// Top right: the other provider as one number, plus the main provider's weekly window.
-struct SideNumber: View {
-    let inputs: HorizonInputs
-    @ObservedObject var store: UsageStore
-    var large: Bool
-
-    var body: some View {
-        VStack(alignment: .trailing, spacing: large ? 3 : 1) {
-            if let side = inputs.side, let w = store.snapshots[side]?.primary {
-                let h = HorizonHeadline(provider: side, window: w, prediction: store.predictions[side])
-                let accent = side == .codex ? HorizonColor.codexBright : HorizonColor.claudeBright
-                Text(Formatting.percent(w.usedPercent))
-                    .font(.system(size: large ? 30 : 18, weight: .bold).monospacedDigit())
-                    .foregroundStyle(h.tone == .warning ? Theme.amber : accent)
-                Text(side.displayName + " " + HorizonHeadline.windowName(w) + " · " + h.title)
-                    .font(.system(size: large ? 11.5 : 10).monospacedDigit()).foregroundStyle(.white.opacity(0.78))
-            } else if let side = inputs.side {
-                Text(side.displayName + " —").font(.system(size: large ? 11.5 : 10)).foregroundStyle(HorizonColor.label)
-            }
-            if let snap = store.snapshots[inputs.main], let weekly = snap.weekly, weekly.key != inputs.window?.key {
-                Text(inputs.main.displayName + " " + HorizonHeadline.windowName(weekly) + " " + Formatting.percent(weekly.usedPercent))
-                    .font(.system(size: large ? 11.5 : 10).monospacedDigit()).foregroundStyle(HorizonColor.label)
-            }
-        }
-        .lineLimit(1)
-    }
-}
-
-// MARK: - First layer
-
-/// The first layer in the horizon style: the conclusion, a small horizon, and up to three session lights.
-struct HorizonCompact: View {
-    @ObservedObject var store: UsageStore
-    @ObservedObject var sessions: SessionStore
-    @ObservedObject var settings: SettingsStore
-    weak var actions: AppActions?
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 20)) { ctx in
-            content(now: ctx.date)
-        }
-    }
-
-    @ViewBuilder
-    private func content(now: Date) -> some View {
-        let inputs = HorizonInputs(store: store, settings: settings)
-        let board = settings.sessionsEnabled ? sessions.board : SessionBoard()
-        let scene = inputs.scene(.compact, now: now, board: board)
-        VStack(spacing: 6) {
-            HStack(alignment: .top) {
-                HorizonHeadlineView(inputs: inputs, store: store, large: false)
-                Spacer(minLength: 12)
-                SideNumber(inputs: inputs, store: store, large: false)
-            }
-            .padding(.horizontal, 22)
-            if !board.waiting.isEmpty {
-                WaitingCapsule(waiting: board.waiting, name: sessions.name(of:), actions: actions, compact: true)
-            }
-            ZStack(alignment: .topLeading) {
-                HorizonCanvas(scene: scene, sky: false, showPace: true)
-                ForEach(scene.orbits) { o in
-                    if let a = o.dotAngle {
-                        let p = scene.layout.point(a, o.radius)
-                        let ctx = sessions.context[o.id].map(ContextGauge.fraction(tokens:))
-                        Button { actions?.jump(to: o.session) } label: { SessionLight(orbit: o, context: ctx, compact: true) }
-                            .buttonStyle(.plain)
-                            .help([sessions.name(of: o.session), SessionText.status(o.session)].joined(separator: "\n"))
-                            .position(x: p.x, y: p.y)
-                        SessionLabel(session: o.session, name: sessions.name(of: o.session), context: ctx, role: o.role, compact: true)
-                            .frame(width: max(60, scene.layout.width - p.x - 38), alignment: .leading)
-                            .offset(x: p.x + 16, y: p.y - 7)
-                            .allowsHitTesting(false)
-                    }
-                }
-                let hidden = board.waiting.count + board.working.count - scene.orbits.count
-                if hidden > 0 || !board.idle.isEmpty {
-                    let p = scene.layout.point(scene.nowAngle, scene.layout.orbitOuter + 16)
-                    Text([hidden > 0 ? "+\(hidden)" : nil, board.idle.isEmpty ? nil : L10n.f("Idle %d", board.idle.count)]
-                            .compactMap { $0 }.joined(separator: " · "))
-                        .font(.system(size: 9.5)).foregroundStyle(HorizonColor.label)
-                        .fixedSize()
-                        .offset(x: p.x + 16, y: p.y - 6)
-                }
-            }
-            .frame(width: scene.layout.width, height: scene.layout.height)
         }
     }
 }

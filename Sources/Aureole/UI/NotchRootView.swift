@@ -113,37 +113,12 @@ struct OpenNotchView: View {
     @ObservedObject var settings: SettingsStore
     weak var actions: AppActions?
 
+    /// The horizon hangs below the usage rows when the workbench is open; the classic layout lists sessions instead.
+    private var horizonBelow: Bool { model.expanded && settings.panelLayout == .horizon }
+
     var body: some View {
-        if settings.panelLayout == .horizon {
-            horizonBody
-        } else {
-            classicBody
-        }
-    }
-
-    private var horizonBody: some View {
         let notchH = model.geometry.notchRect.height
-        return VStack(spacing: 0) {
-            header.frame(height: notchH)
-            if model.expanded {
-                HorizonBoard(store: store, sessions: sessions, settings: settings, width: model.openWidth, actions: actions)
-                    .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
-                    .transition(.opacity)
-            } else {
-                HorizonCompact(store: store, sessions: sessions, settings: settings, actions: actions)
-                    .padding(.top, 8)
-                footer.padding(.horizontal, 22).padding(.top, 4).padding(.bottom, 14)
-            }
-        }
-        .frame(width: model.openWidth, alignment: .top)
-        .background(GeometryReader { geo in
-            Color.clear.preference(key: OpenContentHeightKey.self, value: geo.size.height)
-        })
-    }
-
-    private var classicBody: some View {
-        let notchH = model.geometry.notchRect.height
-        return VStack(spacing: 0) {
+        VStack(spacing: 0) {
             header.frame(height: notchH)
             VStack(spacing: 10) {
                 if settings.sessionsEnabled, !sessions.board.waiting.isEmpty {
@@ -157,16 +132,21 @@ struct OpenNotchView: View {
                     Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
                     SessionsRow(board: sessions.board, name: sessions.name(of:), actions: actions)
                 }
-                if model.expanded {
+                if model.expanded, !horizonBelow {
                     Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
                     WorkbenchSection(sessions: sessions, hooksInstalled: sessions.hookStatus != .notInstalled, actions: actions)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
-                footer
+                if !horizonBelow { footer }
             }
             .padding(.horizontal, 22)
             .padding(.top, 10)
-            .padding(.bottom, 14)
+            .padding(.bottom, horizonBelow ? 4 : 14)
+            if horizonBelow {
+                HorizonBoard(store: store, sessions: sessions, settings: settings, width: model.openWidth, actions: actions)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                footer.padding(.horizontal, 22).padding(.top, 6).padding(.bottom, 14)
+            }
         }
         .frame(width: model.openWidth, alignment: .top)
         .background(GeometryReader { geo in

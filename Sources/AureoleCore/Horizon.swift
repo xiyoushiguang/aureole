@@ -52,11 +52,6 @@ public struct HorizonLayout: Equatable, Sendable {
                                            percentScale: 100, orbitInner: 1540, orbitOuter: 1700, orbitStep: 40,
                                            idleOrbit: 1740, maxOrbits: 8)
 
-    /// The first layer: the same picture on a 580×190 strip, with room for three sessions.
-    public static let compact = HorizonLayout(width: 580, height: 190, center: CGPoint(x: 290, y: 1158), horizon: 1000,
-                                              percentScale: 64, orbitInner: 1084, orbitOuter: 1124, orbitStep: 20,
-                                              idleOrbit: 1144, maxOrbits: 3)
-
     public var nowAngle: Double { minAngle + nowFraction * (maxAngle - minAngle) }
 
     public func point(_ degrees: Double, _ r: Double) -> CGPoint {
