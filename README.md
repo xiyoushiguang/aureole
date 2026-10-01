@@ -97,8 +97,7 @@ Session lanes need a one-time setup: **Settings → Sessions → Install hooks**
 small helper (`aureole-hook`) in `~/.claude/settings.json` for eight hook events, keeping any hooks
 you already have. Sessions are named by the title Claude Code gives the conversation.
 
-Sessions and the horizon panel are on `main` and will ship in the next release; v0.1.0 has the
-usage bars only.
+Sessions and the horizon panel arrived in v0.2.0.
 
 Each session is one small file under `~/Library/Application Support/Aureole/sessions/` (mode 0600)
 holding the folder, state, current tool, terminal id and an optional 80-character prompt excerpt
