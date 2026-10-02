@@ -84,6 +84,12 @@ log in again.
 | Claude | The `Claude Code-credentials` Keychain item written by `claude login` | `api.anthropic.com/api/oauth/usage` |
 | Codex | `~/.codex/auth.json` written by `codex login` | `chatgpt.com/backend-api/wham/usage` |
 
+**Optional, and lighter:** Settings → Sessions → *Usage from the status line*. Claude Code hands its
+status line command the 5-hour and weekly numbers (Pro and Max plans) and each session's exact context
+use. With this on, Aureole takes them from there and calls the endpoint only every ten minutes, for the
+per-model windows the status line does not carry. If you already have a status line, it keeps running:
+Aureole saves its setting, runs it, prints its output, and puts it back when you remove the feature.
+
 By default the Claude token is read through `/usr/bin/security`, Apple's own signed binary, so the
 one-time **Always Allow** you grant in the Keychain prompt survives rebuilds of Aureole. You can
 switch to the direct Keychain API in Settings → Providers.

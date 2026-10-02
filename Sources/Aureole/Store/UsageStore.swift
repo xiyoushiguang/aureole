@@ -23,6 +23,9 @@ final class UsageStore: ObservableObject {
     private var backoff: [ProviderID: TimeInterval] = [:]
     /// Consecutive fetches whose numbers did not move; drives the adaptive interval.
     private var unchanged: [ProviderID: Int] = [:]
+    /// When Claude Code's status line last handed us fresher numbers than the endpoint had.
+    private var lastFeedAt: Date?
+    private var lastSummary: [ProviderID: String] = [:]
     private static let snapshotsURL = AureolePaths.appSupport.appendingPathComponent("snapshots.json")
     private var cancellables: Set<AnyCancellable> = []
 
@@ -72,6 +75,7 @@ final class UsageStore: ObservableObject {
     }
 
     private func tick() {
+        ingestStatusline()
         let now = Date()
         for id in ProviderID.allCases where settings.isEnabled(id) {
             if let due = nextDue[id], due > now { continue }
@@ -110,11 +114,23 @@ final class UsageStore: ObservableObject {
     }
 
     /// Base interval while numbers move; doubles after three unchanged fetches, capped at five minutes.
+    /// While Claude Code's status line keeps the 5-hour and weekly numbers fresh, the endpoint is only
+    /// asked every ten minutes, for the windows the status line does not carry.
     private func interval(for id: ProviderID) -> TimeInterval {
         let base = settings.refreshInterval
         let n = unchanged[id] ?? 0
-        guard n >= 3 else { return base }
-        return min(300, base * pow(2, Double(min(n - 2, 4))))
+        let adaptive = n >= 3 ? min(300, base * pow(2, Double(min(n - 2, 4)))) : base
+        if id == .claude, let fed = lastFeedAt, Date().timeIntervalSince(fed) < 600 { return max(adaptive, 600) }
+        return adaptive
+    }
+
+    /// Takes the newest status line reading when it is newer than what the endpoint last said.
+    private func ingestStatusline() {
+        guard settings.isEnabled(.claude),
+              let feed = StatuslineFiles.loadAll().filter(\.hasLimits).max(by: { $0.at < $1.at }),
+              feed.at > (snapshots[.claude]?.fetchedAt ?? .distantPast).addingTimeInterval(1) else { return }
+        lastFeedAt = feed.at
+        ingest(feed.merged(into: snapshots[.claude]), source: "status line")
     }
 
     private func persistSnapshots() {
@@ -136,6 +152,13 @@ final class UsageStore: ObservableObject {
         } ?? true
         unchanged[id] = moved ? 0 : (unchanged[id] ?? 0) + 1
         nextDue[id] = Date().addingTimeInterval(interval(for: id))
+        ingest(snap, source: "endpoint")
+    }
+
+    /// Records a snapshot from either source and derives forecasts and alerts from it.
+    private func ingest(_ snap: ProviderSnapshot, source: String) {
+        let id = snap.provider
+        let previous = snapshots[id]
         snapshots[id] = snap
         status[id] = .ok
         lastRefresh = snap.fetchedAt
@@ -151,7 +174,11 @@ final class UsageStore: ObservableObject {
         weeklyForecasts[id] = weekly
         routingHint = settings.routingHints ? RoutingHint.evaluate(snapshots, drainedAt: Double(settings.thresholdWarn)) : nil
         let summary = snap.windows.map { "\($0.label)=\(Int($0.usedPercent))%" }.joined(separator: " ")
-        AureoleLog.shared.log("\(id.displayName): \(summary) plan=\(snap.planLabel ?? "-")")
+        // The status line updates on every reply; only log when the numbers change.
+        if source == "endpoint" || summary != lastSummary[id] {
+            AureoleLog.shared.log("\(id.displayName) (\(source)): \(summary) plan=\(snap.planLabel ?? "-")")
+        }
+        lastSummary[id] = summary
         let events = detector.detect(previous: previous, current: snap, prediction: prediction, weekly: weekly)
         dispatch(events)
     }

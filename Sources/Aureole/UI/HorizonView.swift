@@ -110,7 +110,7 @@ struct HorizonPanel: View {
         }
         .overlay(alignment: .topTrailing) {
             if let id = focus, let lane = scene.lanes.first(where: { $0.id == id }) {
-                SessionCard(session: lane.session, name: sessions.name(of: lane.session), context: sessions.context[id], actions: actions)
+                SessionCard(session: lane.session, name: sessions.name(of: lane.session), context: sessions.context[id], fraction: sessions.contextFraction(id), actions: actions)
                     .frame(width: 318)
                     .onHover { inside in
                         hoveringCard = inside
@@ -161,7 +161,7 @@ struct HorizonPanel: View {
                 VStack(spacing: 0) {
                     ForEach(scene.lanes) { lane in
                         LaneRow(scene: scene, lane: lane, scale: s, name: sessions.name(of: lane.session),
-                                context: sessions.context[lane.id], actions: actions, onHover: { laneHover(lane.id, $0) })
+                                context: sessions.context[lane.id], fraction: sessions.contextFraction(lane.id), actions: actions, onHover: { laneHover(lane.id, $0) })
                             .frame(height: Self.laneHeight)
                     }
                 }
@@ -404,6 +404,8 @@ struct LaneRow: View {
     let scale: CGFloat
     let name: String
     let context: Int?
+    /// Context used, 0...1: reported by the status line when installed, else estimated from `context`.
+    let fraction: Double?
     weak var actions: AppActions?
     var onHover: (Bool) -> Void = { _ in }
     @State private var hovered = false
@@ -412,7 +414,6 @@ struct LaneRow: View {
         let s = lane.session
         let waiting = lane.role == .waiting
         let nowX = scene.layout.x(angle: scene.nowAngle) * scale
-        let fraction = context.map(ContextGauge.fraction(tokens:))
         Button { actions?.jump(to: s) } label: {
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 10)
@@ -545,6 +546,7 @@ struct SessionCard: View {
     let session: AgentSession
     let name: String
     let context: Int?
+    let fraction: Double?
     weak var actions: AppActions?
 
     var body: some View {
@@ -569,8 +571,7 @@ struct SessionCard: View {
                     ForEach(Array(recent.enumerated()), id: \.offset) { _, a in row(SessionText.ago(a.at), a.text) }
                 }
             }
-            if let context {
-                let f = ContextGauge.fraction(tokens: context)
+            if let f = fraction {
                 HStack(spacing: 10) {
                     Text(L10n.t("Context")).font(.system(size: 11)).foregroundStyle(HorizonColor.label).frame(width: 52, alignment: .leading)
                     GeometryReader { g in
@@ -580,7 +581,7 @@ struct SessionCard: View {
                         }
                     }
                     .frame(height: 4)
-                    Text("\(Int((f * 100).rounded()))% · \(TranscriptReader.short(context))")
+                    Text("\(Int((f * 100).rounded()))%" + (context.map { " · " + TranscriptReader.short($0) } ?? ""))
                         .font(.system(size: 11).monospacedDigit()).foregroundStyle(.white.opacity(0.86)).fixedSize()
                 }
                 .help(L10n.t("Context %% is an estimate (200k or 1M window)."))

@@ -1,6 +1,8 @@
 // aureole-hook: a Claude Code hook that records what each session is doing.
 // Reads the hook JSON from stdin, folds it into ~/Library/Application Support/Aureole/sessions/<id>.json,
 // prints nothing and always exits 0, so it can never block or alter a session.
+// With --statusline it is Claude Code's status line command instead: it saves the usage and context
+// numbers, then runs the user's own status line (if they had one) and prints what that prints.
 import Foundation
 import Darwin
 import AureoleCore
@@ -8,6 +10,7 @@ import AureoleCore
 func main() {
     let args = CommandLine.arguments.dropFirst()
     if args.first == "--version" { print(AureoleInfo.version); return }
+    if args.first == StatuslineInstaller.flag { statusline(); return }
 
     // Stdin is small (a few KB); cap it anyway so a runaway tool_input cannot stall the hook.
     let data = FileHandle.standardInput.readData(ofLength: 4 << 20)
@@ -28,6 +31,26 @@ func main() {
         return
     }
     try? SessionFiles.save(session)
+}
+
+func statusline() {
+    let data = FileHandle.standardInput.readData(ofLength: 4 << 20)
+    if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+       let feed = StatuslineFeed(json: obj, now: Date()) {
+        try? StatuslineFiles.save(feed)
+    }
+    guard let command = StatuslineInstaller.chainedCommand() else { return }
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/bin/sh")
+    p.arguments = ["-c", command]
+    let input = Pipe()
+    p.standardInput = input
+    p.standardOutput = FileHandle.standardOutput
+    p.standardError = FileHandle.nullDevice
+    guard (try? p.run()) != nil else { return }
+    input.fileHandleForWriting.write(data)
+    try? input.fileHandleForWriting.close()
+    p.waitUntilExit()
 }
 
 /// Finds the agent process above us and the terminal it runs in, for liveness checks and "jump to terminal".

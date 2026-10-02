@@ -71,6 +71,10 @@ Aureole 复用你已经有的登录状态。它从不索要密码，也从不刷
 | Claude | `claude login` 写入钥匙串的 `Claude Code-credentials` | `api.anthropic.com/api/oauth/usage` |
 | Codex | `codex login` 写入的 `~/.codex/auth.json` | `chatgpt.com/backend-api/wham/usage` |
 
+**可选、更轻的方式：** 设置 → 会话 → *从状态栏读取额度*。Claude Code 会把 5 小时、本周额度（Pro、Max 套餐）
+和每个会话的准确上下文占用交给状态栏命令。开启后 Aureole 直接从那里取数，额度接口只每十分钟查一次，用来补状态栏不提供的分模型额度。
+你原有的状态栏照常显示：Aureole 会保存它的设置、照常运行并显示它的输出，移除时原样放回。
+
 默认通过 Apple 自己签名的 `/usr/bin/security` 读取 Claude token，所以你在钥匙串弹窗里点过一次「始终允许」，
 重新编译 Aureole 后依然有效。也可以在 设置 → 服务商 里改成直接调用钥匙串 API。
 

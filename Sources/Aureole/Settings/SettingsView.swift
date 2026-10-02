@@ -112,6 +112,18 @@ struct SessionsTab: View {
                         }
                     }
                 }
+                LabeledContent(L10n.t("Usage from the status line")) {
+                    HStack(spacing: 10) {
+                        Text(L10n.t(sessions.statuslineInstalled ? "On" : "Not installed")).foregroundStyle(.secondary)
+                        if sessions.statuslineInstalled {
+                            Button(L10n.t("Remove")) { sessions.uninstallStatusline() }
+                        } else {
+                            Button(L10n.t("Install")) { sessions.installStatusline() }
+                        }
+                    }
+                }
+                Text(L10n.t("Claude Code hands its status line the 5-hour and weekly numbers and each session's exact context use. Aureole reads them there, so it asks the usage endpoint far less often. A status line you already have keeps working and is restored on removal."))
+                    .font(.caption).foregroundStyle(.secondary)
                 if let err = sessions.lastError {
                     Text(err).font(.caption).foregroundStyle(.orange)
                 }

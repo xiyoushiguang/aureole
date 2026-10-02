@@ -112,8 +112,8 @@ struct TaskRow: View {
         var parts: [String] = []
         if s.provider == .codex { parts.append("Codex") }
         parts.append(Formatting.countdown(Date().timeIntervalSince(s.startedAt)))
-        if let tokens = sessions.context[s.id] {
-            parts.append(L10n.f("context %d%%", Int((ContextGauge.fraction(tokens: tokens) * 100).rounded())))
+        if let f = sessions.contextFraction(s.id) {
+            parts.append(L10n.f("context %d%%", Int((f * 100).rounded())))
         }
         return parts.joined(separator: " · ")
     }

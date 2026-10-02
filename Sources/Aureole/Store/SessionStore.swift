@@ -12,6 +12,9 @@ final class SessionStore: ObservableObject {
     /// Conversation titles Claude Code generates, read from the same transcript tail.
     @Published private(set) var titles: [String: String] = [:]
     @Published private(set) var hookStatus: HookInstaller.Status = .notInstalled
+    @Published private(set) var statuslineInstalled = false
+    /// Context used (0...1) per session as Claude Code's status line reports it; exact, unlike the token estimate.
+    @Published private(set) var contextReported: [String: Double] = [:]
     @Published private(set) var lastError: String?
 
     let settings: SettingsStore
@@ -99,6 +102,9 @@ final class SessionStore: ObservableObject {
         if live != sessions { sessions = live }
         if newBoard != board { board = newBoard }
         refreshContext(for: live, now: now)
+        var reported: [String: Double] = [:]
+        for f in StatuslineFiles.loadAll(now: now) { if let pct = f.contextPercent { reported[f.sessionId] = pct / 100 } }
+        if reported != contextReported { contextReported = reported }
         alerts.waitingAfter = settings.notifyWaitingMinutes > 0 ? TimeInterval(settings.notifyWaitingMinutes * 60) : nil
         alerts.announceDone = settings.notifyDone
         let events = alerts.check(newBoard, now: now, name: name(of:))
@@ -168,7 +174,52 @@ final class SessionStore: ObservableObject {
     }
 
     func refreshHookStatus() {
-        hookStatus = (try? HookInstaller.read()).map { HookInstaller.status(settings: $0) } ?? .notInstalled
+        let current = try? HookInstaller.read()
+        hookStatus = current.map { HookInstaller.status(settings: $0) } ?? .notInstalled
+        statuslineInstalled = current.map { StatuslineInstaller.isInstalled(settings: $0) } ?? false
+    }
+
+    /// How full a session's context is: what the status line reported, else an estimate from the token count.
+    func contextFraction(_ id: String) -> Double? {
+        contextReported[id] ?? context[id].map(ContextGauge.fraction(tokens:))
+    }
+
+    /// Points Claude Code's status line at the helper. A status line the user already had keeps running
+    /// (its setting is saved and the helper chains to it) and comes back on removal.
+    func installStatusline() {
+        do {
+            installHelperIfNeeded()
+            let current = try HookInstaller.read()
+            let (merged, original) = StatuslineInstaller.install(settings: current, helperPath: Self.helperURL.path)
+            if let original {
+                let data = try JSONSerialization.data(withJSONObject: original, options: [.prettyPrinted, .sortedKeys])
+                try data.write(to: StatuslineInstaller.chainURL, options: .atomic)
+            } else if !StatuslineInstaller.isInstalled(settings: current) {
+                try? FileManager.default.removeItem(at: StatuslineInstaller.chainURL)
+            }
+            try HookInstaller.write(merged)
+            lastError = nil
+            AureoleLog.shared.log("status line feed installed" + (original != nil ? " (chaining the existing status line)" : ""))
+        } catch {
+            lastError = error.localizedDescription
+            AureoleLog.shared.log("status line install failed: \(error.localizedDescription)")
+        }
+        refreshHookStatus()
+    }
+
+    func uninstallStatusline() {
+        do {
+            let current = try HookInstaller.read()
+            let original = (try? Data(contentsOf: StatuslineInstaller.chainURL))
+                .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            try HookInstaller.write(StatuslineInstaller.uninstall(settings: current, original: original))
+            try? FileManager.default.removeItem(at: StatuslineInstaller.chainURL)
+            lastError = nil
+            AureoleLog.shared.log("status line feed removed" + (original != nil ? " (original status line restored)" : ""))
+        } catch {
+            lastError = error.localizedDescription
+        }
+        refreshHookStatus()
     }
 
     func installHooks() { setHooks(installed: true) }

@@ -43,6 +43,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
                                ("app.aureole.close", { [weak self] in self?.notch?.setPinnedOpen(false) }),
                                ("app.aureole.hooks-install", { [weak self] in self?.sessions.installHooks() }),
                                ("app.aureole.hooks-remove", { [weak self] in self?.sessions.uninstallHooks() }),
+                               ("app.aureole.statusline-install", { [weak self] in self?.sessions.installStatusline() }),
+                               ("app.aureole.statusline-remove", { [weak self] in self?.sessions.uninstallStatusline() }),
                                ("app.aureole.refresh", { [weak self] in self?.refreshNow() })] as [(String, () -> Void)] {
             center.addObserver(forName: Notification.Name(name), object: nil, queue: .main) { _ in
                 MainActor.assumeIsolated { action() }

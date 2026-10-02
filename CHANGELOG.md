@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Weekly forecast.** Weekly windows (and per-model weeklies, and Codex's weekly) are forecast from
+  the week's average pace, shown as %/day with a weekday ("runs out Thu 15:00"), and announced once
+  from 20% when they would run out before the reset. The half-hour fit used before swung wildly over days.
+- **Usage from Claude Code's status line** (Settings → Sessions, opt-in). Claude Code hands its status
+  line the 5-hour and weekly numbers and each session's exact context use; Aureole reads them there
+  and asks the usage endpoint only every ten minutes while they keep coming (for per-model windows).
+  Context % becomes exact instead of estimated. A status line you already have keeps running.
 - **The closed notch says when something needs you.** A line drops below the notch:
   "● Waiting 2 · ✓ Done 1", the dot breathing while a session waits. No need to hover to find out.
 - **Notifications for sessions.** A session that has waited on you for 2 minutes (configurable, or off)
