@@ -42,6 +42,8 @@ final class SettingsStore: ObservableObject {
     /// Minutes a session may wait on you before a notification goes out; 0 turns it off.
     @Published var notifyWaitingMinutes: Int { didSet { defaults.set(notifyWaitingMinutes, forKey: "notifyWaitingMinutes") } }
     @Published var notifyDone: Bool { didSet { defaults.set(notifyDone, forKey: "notifyDone") } }
+    /// Ask GitHub once a day whether a newer release is out.
+    @Published var checkUpdates: Bool { didSet { defaults.set(checkUpdates, forKey: "checkUpdates") } }
     @Published var sessionsEnabled: Bool { didSet { defaults.set(sessionsEnabled, forKey: "sessionsEnabled") } }
     /// The hook helper reads this key too (via the app's defaults domain) to decide whether to keep a prompt excerpt.
     @Published var sessionPromptPreview: Bool { didSet { defaults.set(sessionPromptPreview, forKey: "sessionPromptPreview") } }
@@ -69,6 +71,7 @@ final class SettingsStore: ObservableObject {
         panelLayout = PanelLayout(rawValue: d.string(forKey: "panelLayout") ?? "") ?? .horizon
         notifyWaitingMinutes = d.object(forKey: "notifyWaitingMinutes") as? Int ?? 2
         notifyDone = d.object(forKey: "notifyDone") as? Bool ?? true
+        checkUpdates = d.object(forKey: "checkUpdates") as? Bool ?? true
         sessionsEnabled = d.object(forKey: "sessionsEnabled") as? Bool ?? true
         sessionPromptPreview = d.object(forKey: "sessionPromptPreview") as? Bool ?? true
         if let data = try? Data(contentsOf: channelsURL),

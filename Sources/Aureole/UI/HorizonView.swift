@@ -176,6 +176,7 @@ struct HorizonPanel: View {
         HStack(spacing: 14) {
             Button(L10n.t("Refresh")) { actions?.refreshNow() }
             Button(L10n.t("Settings…")) { actions?.openSettings() }
+            UpdateLink()
             Spacer()
             key(Theme.claude, L10n.t("Claude working"))
             key(Theme.codex, L10n.t("Codex working"))

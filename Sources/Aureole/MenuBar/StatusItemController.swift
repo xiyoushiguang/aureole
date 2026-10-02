@@ -25,6 +25,9 @@ final class StatusItemController: NSObject {
         settings.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.buildMenu(); self?.update() }
         }.store(in: &cancellables)
+        UpdateStore.shared.$available.removeDuplicates().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.buildMenu() }
+        }.store(in: &cancellables)
     }
 
     private func buildMenu() {
@@ -37,6 +40,9 @@ final class StatusItemController: NSObject {
         launchAtLoginItem = login
         menu.addItem(login)
         menu.addItem(withTitle: L10n.t("Settings…"), action: #selector(openSettings), keyEquivalent: ",").target = self
+        if let r = UpdateStore.shared.available {
+            menu.addItem(withTitle: L10n.f("Download version %@…", r.version), action: #selector(openUpdate), keyEquivalent: "").target = self
+        }
         menu.addItem(.separator())
         menu.addItem(withTitle: L10n.t("Quit Aureole"), action: #selector(quit), keyEquivalent: "q").target = self
         item.menu = menu
@@ -60,6 +66,7 @@ final class StatusItemController: NSObject {
     @objc private func refresh() { actions?.refreshNow() }
     @objc private func openSettings() { actions?.openSettings() }
     @objc private func quit() { actions?.quit() }
+    @objc private func openUpdate() { UpdateStore.shared.openRelease() }
 
     @objc private func toggleLaunchAtLogin() {
         do {

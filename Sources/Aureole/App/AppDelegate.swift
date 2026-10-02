@@ -8,6 +8,7 @@ protocol AppActions: AnyObject {
     func refreshNow()
     func togglePinned()
     func jump(to session: AgentSession)
+    func openWelcome()
     func quit()
 }
 
@@ -19,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
     private var notch: NotchController?
     private var statusItem: StatusItemController?
     private var settingsWindow: NSWindow?
+    private var welcomeWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AureoleLog.shared.log("Aureole \(AureoleInfo.version) launched")
@@ -33,6 +35,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
         sessions.onEvents = { [weak self] in self?.store.dispatch($0) }
         store.start()
         sessions.start()
+        UpdateStore.shared.start { [weak self] in self?.settings.checkUpdates ?? false }
+        // Once, on the first launch: walk through sign-ins, hooks and notifications.
+        if !UserDefaults.standard.bool(forKey: "welcomeShown") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.openWelcome() }
+        }
         installDebugCommands()
     }
 
@@ -45,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
                                ("app.aureole.hooks-remove", { [weak self] in self?.sessions.uninstallHooks() }),
                                ("app.aureole.statusline-install", { [weak self] in self?.sessions.installStatusline() }),
                                ("app.aureole.statusline-remove", { [weak self] in self?.sessions.uninstallStatusline() }),
+                               ("app.aureole.welcome", { [weak self] in self?.openWelcome() }),
                                ("app.aureole.refresh", { [weak self] in self?.refreshNow() })] as [(String, () -> Void)] {
             center.addObserver(forName: Notification.Name(name), object: nil, queue: .main) { _ in
                 MainActor.assumeIsolated { action() }
@@ -58,7 +66,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
 
     func openSettings() {
         if settingsWindow == nil {
-            let view = SettingsView(settings: settings, store: store, sessions: sessions)
+            let view = SettingsView(settings: settings, store: store, sessions: sessions,
+                                    openWelcome: { [weak self] in self?.openWelcome() })
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 480),
                                   styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
             window.title = "Aureole Settings"
@@ -69,6 +78,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
         }
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    func openWelcome() {
+        UserDefaults.standard.set(true, forKey: "welcomeShown")
+        if welcomeWindow == nil {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 560),
+                                  styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            window.title = "Aureole"
+            window.isReleasedWhenClosed = false
+            let view = WelcomeView(settings: settings, store: store, sessions: sessions, actions: self,
+                                   close: { [weak window] in window?.close() })
+            window.contentView = NSHostingView(rootView: view)
+            window.center()
+            welcomeWindow = window
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        welcomeWindow?.makeKeyAndOrderFront(nil)
     }
 
     func refreshNow() { store.refreshAll(force: true) }

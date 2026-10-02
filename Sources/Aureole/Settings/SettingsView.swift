@@ -5,10 +5,11 @@ struct SettingsView: View {
     @ObservedObject var settings: SettingsStore
     @ObservedObject var store: UsageStore
     @ObservedObject var sessions: SessionStore
+    var openWelcome: () -> Void = {}
 
     var body: some View {
         TabView {
-            GeneralTab(settings: settings).tabItem { Label(L10n.t("General"), systemImage: "gearshape") }
+            GeneralTab(settings: settings, openWelcome: openWelcome).tabItem { Label(L10n.t("General"), systemImage: "gearshape") }
             ProvidersTab(settings: settings, store: store).tabItem { Label(L10n.t("Providers"), systemImage: "person.2") }
             SessionsTab(settings: settings, sessions: sessions).tabItem { Label(L10n.t("Sessions"), systemImage: "terminal") }
             ChannelsTab(settings: settings, store: store).tabItem { Label(L10n.t("Notifications"), systemImage: "bell") }
@@ -21,6 +22,7 @@ struct SettingsView: View {
 
 struct GeneralTab: View {
     @ObservedObject var settings: SettingsStore
+    var openWelcome: () -> Void = {}
 
     var body: some View {
         Form {
@@ -49,6 +51,9 @@ struct GeneralTab: View {
             Stepper(L10n.f("Critical at %d%%", settings.thresholdCritical), value: $settings.thresholdCritical, in: 80...100, step: 5)
             Toggle(L10n.t("Suggest routing work to the provider with headroom"), isOn: $settings.routingHints)
             Toggle(L10n.t("macOS notifications"), isOn: $settings.nativeNotifications)
+            Button(L10n.t("Open the welcome guide…")) { openWelcome() }
+            Toggle(L10n.t("Check for new versions once a day"), isOn: $settings.checkUpdates)
+            UpdateRow()
             Text(L10n.f("Version %@ · log at %@", AureoleInfo.version, "~/Library/Logs/Aureole/aureole.log"))
                 .font(.caption).foregroundStyle(.secondary)
         }
@@ -237,3 +242,22 @@ struct ChannelEditor: View {
         )
     }
 }
+
+/// "Up to date" / "New version 0.3.1 · Download", with a manual check.
+struct UpdateRow: View {
+    @ObservedObject var updates = UpdateStore.shared
+
+    var body: some View {
+        HStack {
+            if let r = updates.available {
+                Text(L10n.f("Version %@ is available", r.version)).foregroundStyle(.orange)
+                Button(L10n.t("Download")) { updates.openRelease() }
+            } else {
+                Text(L10n.t(updates.checking ? "Checking…" : "No newer version found")).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(L10n.t("Check now")) { updates.check(force: true) }.disabled(updates.checking)
+        }
+    }
+}
+
