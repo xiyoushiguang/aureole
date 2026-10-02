@@ -68,6 +68,27 @@ public enum Predictor {
                           basedOnMinutes: Int(span / 60))
     }
 
+    /// Windows this long are forecast from their average pace, not from the last half hour.
+    public static let longWindow: TimeInterval = 2 * 86400
+
+    /// "At this week's pace": usage so far divided by time elapsed in the window. A recent-rate fit swings
+    /// wildly over days (a busy afternoon says "gone tomorrow", a night says "never"), the average does not.
+    /// nil until the window has run `minElapsed`, so a fresh week does not extrapolate from one burst.
+    public static func windowPace(_ w: UsageWindow, now: Date = Date(), minElapsed: TimeInterval = 6 * 3600) -> Prediction? {
+        guard let reset = w.resetsAt, let d = w.duration, d >= longWindow else { return nil }
+        let elapsed = now.timeIntervalSince(reset.addingTimeInterval(-d))
+        guard elapsed >= minElapsed, w.usedPercent > 0 else { return nil }
+        let perHour = w.usedPercent / (elapsed / 3600)
+        let exhaustAt = w.usedPercent < 100 ? now.addingTimeInterval((100 - w.usedPercent) / perHour * 3600) : nil
+        return Prediction(ratePerHour: perHour, exhaustAt: exhaustAt, resetsAt: reset, basedOnMinutes: Int(elapsed / 60))
+    }
+
+    /// The forecast to show for a window: average pace for long windows, recent fit for short ones.
+    public static func forecast(_ w: UsageWindow, samples: [Sample], now: Date = Date()) -> Prediction? {
+        if let d = w.duration, d >= longWindow { return windowPace(w, now: now) }
+        return predict(samples: samples, now: now)
+    }
+
     public static func sameCycle(_ a: Date?, _ b: Date?) -> Bool {
         switch (a, b) {
         case (nil, nil): return true

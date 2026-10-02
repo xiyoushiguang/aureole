@@ -266,7 +266,8 @@ struct ProviderRow: View {
                     if let line = detailLine(snap) {
                         Text(line)
                             .font(.system(size: 10).monospacedDigit())
-                            .foregroundStyle(store.predictions[provider]?.exhaustsBeforeReset == true ? Theme.amber : Theme.dim)
+                            .foregroundStyle(store.predictions[provider]?.exhaustsBeforeReset == true
+                                             || (store.weeklyForecasts[provider] ?? [:]).values.contains { $0.exhaustsBeforeReset } ? Theme.amber : Theme.dim)
                             .lineLimit(1)
                     }
                 } else {
@@ -314,6 +315,14 @@ struct ProviderRow: View {
         }
         let extras = snap.extras.filter { $0.key != "extra_usage" }.map { "\($0.displayLabel) \(Formatting.percent($0.usedPercent))" }
         if !extras.isEmpty { parts.append(extras.joined(separator: " · ")) }
+        // A weekly window that will run out before it resets, at this week's average pace.
+        let forecasts = store.weeklyForecasts[provider] ?? [:]
+        if let (w, at) = snap.windows.compactMap({ w -> (UsageWindow, Date)? in
+            guard w.key != snap.primary?.key, let p = forecasts[w.key], p.exhaustsBeforeReset, let at = p.exhaustAt else { return nil }
+            return (w, at)
+        }).min(by: { $0.1 < $1.1 }) {
+            parts.append(w.displayLabel + " " + L10n.f("runs out %@", HorizonHeadline.when(at, now: Date())))
+        }
         return parts.isEmpty ? nil : parts.joined(separator: "   ")
     }
 }

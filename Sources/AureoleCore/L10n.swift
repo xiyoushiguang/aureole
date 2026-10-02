@@ -71,6 +71,7 @@ public enum L10n {
         "Waiting %d": "等你 %d", "Notify when a session waits": "会话等你时通知", "after %d min": "等 %d 分钟后",
         "Notify when a task is done": "任务干完时通知",
         "Uses the same channels as usage alerts (macOS notification, WeChat, etc.).": "和额度提醒走同样的渠道（macOS 通知、微信等）。",
+        "≈%d%%/day": "≈%d%%/天", "runs out %@": "%@ 用完", "lasts": "够用",
         "working": "干活中", "Last: %@": "上次：%@", "Panel layout": "面板样式", "Horizon": "晨昏线", "List": "列表", "Session tracking is off.": "会话跟踪已关闭。",
         "Context %% is an estimate (200k or 1M window).": "上下文百分比是估算（按 20 万或 100 万窗口）。",
         "Jump to terminal": "跳到终端", "Requesting": "正在请求", "Last": "最近", "Prompt": "提示词", "Folder": "目录",

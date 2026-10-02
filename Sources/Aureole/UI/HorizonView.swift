@@ -666,15 +666,31 @@ struct SideNumber: View {
                     .font(.system(size: 26, weight: .bold).monospacedDigit())
                     .foregroundStyle(h.tone == .warning ? Theme.amber : (side == .codex ? HorizonColor.codexBright : HorizonColor.claudeBright))
                 Text(side.displayName + " " + HorizonHeadline.windowName(w) + " · " + h.title)
-                    .font(.system(size: 11.5).monospacedDigit()).foregroundStyle(.white.opacity(0.78))
+                    .font(.system(size: 11.5).monospacedDigit()).foregroundStyle(h.tone == .warning ? Theme.amber : .white.opacity(0.78))
             } else if let side = inputs.side {
                 Text(side.displayName + " —").font(.system(size: 11.5)).foregroundStyle(HorizonColor.label)
             }
-            if let snap = store.snapshots[inputs.main], let weekly = snap.weekly, weekly.key != inputs.window?.key {
-                Text(inputs.main.displayName + " " + HorizonHeadline.windowName(weekly) + " " + Formatting.percent(weekly.usedPercent))
-                    .font(.system(size: 11.5).monospacedDigit()).foregroundStyle(HorizonColor.label)
+            ForEach(weeklyLines, id: \.text) { line in
+                Text(line.text).font(.system(size: 11.5).monospacedDigit())
+                    .foregroundStyle(line.warning ? Theme.amber : HorizonColor.label)
             }
         }
         .lineLimit(1)
+    }
+
+    /// The main provider's weekly windows other than the one on the horizon: the general weekly always,
+    /// per-model weeklies only when they would run out before their reset.
+    private var weeklyLines: [(text: String, warning: Bool)] {
+        guard let snap = store.snapshots[inputs.main] else { return [] }
+        let forecasts = store.weeklyForecasts[inputs.main] ?? [:]
+        return snap.windows.compactMap { w in
+            guard w.key != inputs.window?.key, (w.duration ?? 0) >= Predictor.longWindow, w.key != "extra_usage" else { return nil }
+            let p = forecasts[w.key]
+            let warning = p?.exhaustsBeforeReset == true
+            guard w.kind == .sevenDay || warning else { return nil }
+            var text = inputs.main.displayName + " " + HorizonHeadline.windowName(w) + " " + Formatting.percent(w.usedPercent)
+            if warning, let at = p?.exhaustAt { text += " · " + L10n.f("runs out %@", HorizonHeadline.when(at, now: Date())) }
+            return (text, warning)
+        }
     }
 }

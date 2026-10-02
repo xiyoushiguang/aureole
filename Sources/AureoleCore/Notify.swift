@@ -46,7 +46,7 @@ public enum UsageEvent: Equatable, Sendable {
         case .reset(_, let w):
             return L10n.t("Fresh window") + (w.resetsAt.map { L10n.f(", next reset %@", Formatting.resetText($0)) } ?? "")
         case .forecast(_, let w, let at):
-            return L10n.f("At the current pace it hits 100%% around %@", Formatting.clock(at)) + (w.resetsAt.map { L10n.f(", reset is %@", Formatting.resetText($0)) } ?? "")
+            return L10n.f("At the current pace it hits 100%% around %@", HorizonHeadline.when(at, now: Date())) + (w.resetsAt.map { L10n.f(", reset is %@", Formatting.resetText($0)) } ?? "")
         case .authLost(_, let m):
             return m
         case .sessionWaiting(_, _, let detail, let since):
@@ -69,6 +69,8 @@ public enum UsageEvent: Equatable, Sendable {
 public struct EventDetector: Sendable {
     public var thresholds: [Int]
     public var forecastMinimumPercent: Double
+    /// Weekly windows warn earlier: there is more room to change course.
+    public var weeklyForecastMinimumPercent: Double = 20
     /// Events already delivered: "provider|window|kind" → the reset time (epoch) of the cycle they were sent for.
     /// Persist this so a relaunch never re-sends. Reset times drift by a few seconds between fetches, so
     /// matching uses a tolerance rather than exact equality.
@@ -80,8 +82,9 @@ public struct EventDetector: Sendable {
         self.sent = sent
     }
 
+    /// `weekly` holds average-pace forecasts for the long windows, by window key.
     public mutating func detect(previous: ProviderSnapshot?, current: ProviderSnapshot,
-                                prediction: Prediction?, now: Date = Date()) -> [UsageEvent] {
+                                prediction: Prediction?, weekly: [String: Prediction] = [:], now: Date = Date()) -> [UsageEvent] {
         var events: [UsageEvent] = []
         for w in current.windows where w.kind != .other {
             let prev = previous?.windows.first { $0.key == w.key }
@@ -99,6 +102,10 @@ public struct EventDetector: Sendable {
             }
             if w.kind == .fiveHour, let p = prediction, p.exhaustsBeforeReset, let at = p.exhaustAt,
                w.usedPercent >= forecastMinimumPercent, mark("\(base)|forecast", cycle: w.resetsAt) {
+                events.append(.forecast(provider: current.provider, window: w, exhaustAt: at))
+            }
+            if w.kind == .sevenDay, let p = weekly[w.key], p.exhaustsBeforeReset, let at = p.exhaustAt,
+               w.usedPercent >= weeklyForecastMinimumPercent, mark("\(base)|forecast", cycle: w.resetsAt) {
                 events.append(.forecast(provider: current.provider, window: w, exhaustAt: at))
             }
         }

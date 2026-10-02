@@ -52,4 +52,33 @@ final class PredictorTests: XCTestCase {
         XCTAssertNil(RoutingHint.evaluate([.claude: snap(.claude, 85), .codex: snap(.codex, 60)]))
         XCTAssertNil(RoutingHint.evaluate([.claude: snap(.claude, 30), .codex: snap(.codex, 20)]))
     }
+
+    func testWeeklyForecastUsesTheWeeksAveragePace() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        // Two days into a seven-day window with 40% used: 20%/day, so 60% more takes 3 days, two days before the reset.
+        let w = UsageWindow(key: "seven_day", label: "Week", kind: .sevenDay, usedPercent: 40,
+                            resetsAt: now.addingTimeInterval(5 * 86400), duration: 7 * 86400)
+        let p = Predictor.windowPace(w, now: now)!
+        XCTAssertEqual(p.ratePerHour * 24, 20, accuracy: 1e-9)
+        XCTAssertEqual(p.exhaustAt!.timeIntervalSince(now), 3 * 86400, accuracy: 1)
+        XCTAssertTrue(p.exhaustsBeforeReset)
+        // A fresh week does not extrapolate from one burst; short windows are not paced this way.
+        let fresh = UsageWindow(key: "seven_day", label: "Week", kind: .sevenDay, usedPercent: 10,
+                                resetsAt: now.addingTimeInterval(7 * 86400 - 3600), duration: 7 * 86400)
+        XCTAssertNil(Predictor.windowPace(fresh, now: now))
+        let fiveHour = UsageWindow(key: "five_hour", label: "5h", kind: .fiveHour, usedPercent: 40,
+                                   resetsAt: now.addingTimeInterval(3600), duration: 5 * 3600)
+        XCTAssertNil(Predictor.windowPace(fiveHour, now: now))
+
+        L10n.language = .english
+        let h = HorizonHeadline(provider: .codex, window: w, prediction: p, now: now)
+        XCTAssertEqual(h.tone, .warning)
+        XCTAssertEqual(h.detail, "Codex weekly used 40% · ≈20%/day")
+
+        var detector = EventDetector()
+        let snap = ProviderSnapshot(provider: .codex, windows: [w], fetchedAt: now, planLabel: nil)
+        let events = detector.detect(previous: nil, current: snap, prediction: nil, weekly: ["seven_day": p], now: now)
+        XCTAssertEqual(events.map(\.kind), ["forecast"])
+        XCTAssertEqual(detector.detect(previous: snap, current: snap, prediction: nil, weekly: ["seven_day": p], now: now), [])
+    }
 }

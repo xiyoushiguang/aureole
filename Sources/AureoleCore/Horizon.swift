@@ -264,8 +264,10 @@ public struct HorizonHeadline: Equatable, Sendable {
         }
         let name = provider.displayName + " " + Self.windowName(window)
         var numbers = L10n.f("%@ used %d%%", name, Int(window.usedPercent.rounded()))
+        let long = (window.duration ?? 0) >= Predictor.longWindow
         if let p = prediction {
-            if p.ratePerHour >= 0.5 { numbers += " · " + L10n.f("≈%d%%/h", Int(p.ratePerHour.rounded())) }
+            if long { numbers += " · " + L10n.f("≈%d%%/day", Int((p.ratePerHour * 24).rounded())) }
+            else if p.ratePerHour >= 0.5 { numbers += " · " + L10n.f("≈%d%%/h", Int(p.ratePerHour.rounded())) }
             else if p.basedOnMinutes >= 4 { numbers += " · " + L10n.t("idle") }
         }
         if window.usedPercent >= 100 {
@@ -274,8 +276,8 @@ public struct HorizonHeadline: Equatable, Sendable {
             detail = numbers
             tone = .warning
         } else if let p = prediction, let at = p.exhaustAt, let reset = window.resetsAt, at < reset {
-            title = L10n.f("Runs out %@", Formatting.clock(at))
-            subtitle = L10n.f("%@ before the %@ reset", Formatting.countdown(reset.timeIntervalSince(at)), Formatting.clock(reset))
+            title = L10n.f("Runs out %@", Self.when(at, now: now))
+            subtitle = L10n.f("%@ before the %@ reset", Formatting.countdown(reset.timeIntervalSince(at)), Self.when(reset, now: now))
             detail = numbers
             tone = .warning
         } else if let reset = window.resetsAt {

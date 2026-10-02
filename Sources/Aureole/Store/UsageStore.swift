@@ -8,6 +8,8 @@ final class UsageStore: ObservableObject {
     @Published private(set) var snapshots: [ProviderID: ProviderSnapshot] = [:]
     @Published private(set) var status: [ProviderID: ProviderStatus] = [:]
     @Published private(set) var predictions: [ProviderID: Prediction] = [:]
+    /// Average-pace forecasts for each provider's long (weekly) windows, by window key.
+    @Published private(set) var weeklyForecasts: [ProviderID: [String: Prediction]] = [:]
     @Published private(set) var routingHint: RoutingHint?
     @Published private(set) var lastRefresh: Date?
     @Published private(set) var lastChannelError: String?
@@ -63,6 +65,7 @@ final class UsageStore: ObservableObject {
             snapshots[id] = nil
             status[id] = nil
             predictions[id] = nil
+            weeklyForecasts[id] = nil
         }
         routingHint = settings.routingHints ? RoutingHint.evaluate(snapshots, drainedAt: Double(settings.thresholdWarn)) : nil
         objectWillChange.send()
@@ -140,13 +143,16 @@ final class UsageStore: ObservableObject {
         history.append(snap)
         var prediction: Prediction?
         if let primary = snap.primary {
-            prediction = Predictor.predict(samples: history.samples(provider: id, key: primary.key))
+            prediction = Predictor.forecast(primary, samples: history.samples(provider: id, key: primary.key))
         }
         predictions[id] = prediction
+        var weekly: [String: Prediction] = [:]
+        for w in snap.windows { if let p = Predictor.windowPace(w) { weekly[w.key] = p } }
+        weeklyForecasts[id] = weekly
         routingHint = settings.routingHints ? RoutingHint.evaluate(snapshots, drainedAt: Double(settings.thresholdWarn)) : nil
         let summary = snap.windows.map { "\($0.label)=\(Int($0.usedPercent))%" }.joined(separator: " ")
         AureoleLog.shared.log("\(id.displayName): \(summary) plan=\(snap.planLabel ?? "-")")
-        let events = detector.detect(previous: previous, current: snap, prediction: prediction)
+        let events = detector.detect(previous: previous, current: snap, prediction: prediction, weekly: weekly)
         dispatch(events)
     }
 
