@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **Codex sessions.** Codex now has hooks; Settings → Sessions → Codex hooks registers the same helper
+  in `~/.codex/hooks.json` (your `notify` setting is left alone). Codex asks you to trust it once.
+- **Approve from the panel** (opt-in, off by default). Hover a waiting session: the card shows the full
+  request and offers *Allow once* or *Deny*. Nothing is allowed without that click, there is no "always
+  allow", and if you do not answer within 15/30/60 s the terminal asks as usual.
+- **More terminals.** Jump to WezTerm and kitty panes, Ghostty 1.3+ tabs, and the VS Code or Cursor
+  window that has the session's folder. Warp and Alacritty come to the front.
+- **Quiet and nearly full.** A working session with no event for ten minutes, or a context past 85%,
+  is called out on its lane.
+- **Welcome guide** on first launch (sign-ins, hooks, status line, notifications, launch at login), and
+  a once-a-day check for a newer release that shows "New version x.y.z ›" in the panel.
+
 ## 0.3.0 — 2026-10-02
 
 - **Weekly forecast.** Weekly windows (and per-model weeklies, and Codex's weekly) are forecast from

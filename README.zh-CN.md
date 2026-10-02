@@ -108,9 +108,16 @@ Aureole 复用你已经有的登录状态。它从不索要密码，也从不刷
 
 目前只有 Terminal 和 iTerm2 在真机上测过，其他终端欢迎反馈。
 
+### 在面板里批准（可选）
+
+设置 → 会话 → *在面板里批准请求*。会话请求权限时，把鼠标移到它上面：详情卡会显示完整请求（整条命令，或者要改的文件和内容），
+以及 **允许这一次** 和 **拒绝**。没有你的点击绝不会放行，也没有「总是允许」。Aureole 等待期间（15、30 或 60 秒，可选）终端里的
+确认框会暂缓出现；你没回应，它就照常弹出。Claude Code 和 Codex 都支持。
+
 ## 隐私
 
 - 没有账号，没有遥测，没有统计。
+- 每天向 GitHub 公开接口查询一次最新版本（可在 设置 → 通用 里关闭）。
 - 通知渠道设置（webhook 地址、机器人 token）存放在 `~/Library/Application Support/Aureole/channels.json`，权限 `0600`。
 - 用于预测消耗速度的采样存在旁边的 `history.json`，保留七天。
 - `defaults write app.aureole.Aureole debugDump -bool true` 会把原始额度返回存到 `Application Support/Aureole/debug/`

@@ -129,9 +129,18 @@ keeps working while it waits for your answer).
 
 Only Terminal and iTerm2 have been tested on real hardware so far; reports for the others are welcome.
 
+### Approving from the panel (opt-in)
+
+Settings → Sessions → *Approve requests from the panel*. When a session asks for permission, hover it:
+the card shows the full request (the whole command, or the file and the change) with **Allow once**
+and **Deny**. Nothing is allowed without that click, and there is no "always allow". While Aureole
+waits (15, 30 or 60 seconds, your choice) the terminal prompt is held back; if you do not answer, it
+appears as usual. Works for Claude Code and Codex.
+
 ## Privacy
 
 - No accounts, no telemetry, no analytics.
+- Once a day Aureole asks GitHub's public API for the latest release (switch it off in Settings → General).
 - Notification channel settings (webhook URLs, bot tokens) are stored in
   `~/Library/Application Support/Aureole/channels.json` with `0600` permissions.
 - Usage samples for the burn-rate forecast live in `history.json` next to it, seven days deep.
