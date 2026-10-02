@@ -318,19 +318,75 @@ enum TerminalJumper {
                 break
             }
         }
+        // Terminals that can focus a given pane or window from outside.
+        if let pane = s.weztermPane {
+            tool(["wezterm", "/Applications/WezTerm.app/Contents/MacOS/wezterm"], ["cli", "activate-pane", "--pane-id", pane])
+        }
+        if let id = s.kittyWindowId, let socket = s.kittyListenOn {
+            // Needs allow_remote_control and listen_on in kitty.conf; without them this quietly does nothing.
+            tool(["kitten", "/Applications/kitty.app/Contents/MacOS/kitten"], ["@", "--to", socket, "focus-window", "--match", "id:\(id)"])
+        }
+        if s.termProgram == "ghostty" {
+            // Ghostty 1.3+ scripting has no tty, so match the tab by working directory.
+            run(script: """
+            tell application "Ghostty"
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        repeat with term in terminals of t
+                            if working directory of term is "\(s.cwd)" then
+                                focus term
+                                activate
+                                return
+                            end if
+                        end repeat
+                    end repeat
+                end repeat
+            end tell
+            """)
+        }
         if let pane = s.tmuxPane {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
             p.arguments = ["tmux", "select-pane", "-t", pane]
             try? p.run()
         }
+        // VS Code and Cursor: no way to pick an integrated terminal from outside, but opening the folder
+        // brings up the window that has it.
+        if let id = s.bundleId, editorBundles.contains(id) {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            p.arguments = ["-b", id, s.cwd]
+            try? p.run()
+            return
+        }
         if let id = s.bundleId, let app = NSRunningApplication.runningApplications(withBundleIdentifier: id).first {
             app.activate()
         }
     }
 
-    /// Runs in a separate osascript process: an Apple Event to a busy terminal, or one waiting behind an
-    /// Automation permission prompt, can block for minutes, and doing that on the main thread froze the panel.
+    /// VS Code and Cursor (Cursor's id is fixed across releases).
+    static let editorBundles: Set<String> = ["com.microsoft.VSCode", "com.microsoft.VSCodeInsiders", "com.todesktop.230313mzl4w4u92"]
+
+    /// Runs the first of `names` that exists (a PATH name or an absolute path), detached, logging failures.
+    private static func tool(_ names: [String], _ args: [String]) {
+        let fm = FileManager.default
+        let path = names.first { $0.hasPrefix("/") && fm.isExecutableFile(atPath: $0) }
+        let p = Process()
+        if let path {
+            p.executableURL = URL(fileURLWithPath: path)
+            p.arguments = args
+        } else {
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            p.arguments = [names[0]] + args
+        }
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        p.terminationHandler = { proc in
+            if proc.terminationStatus != 0 { AureoleLog.shared.log("terminal jump: \(names[0]) exited \(proc.terminationStatus)") }
+        }
+        try? p.run()
+    }
+
     private static func run(script: String) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")

@@ -94,6 +94,20 @@ Aureole 复用你已经有的登录状态。它从不索要密码，也从不刷
 只放在内存里。这个小程序不输出任何东西、总是以 0 退出，所以绝不会卡住或改变会话。跳到 Terminal 或 iTerm2
 标签页用的是 Apple Events，macOS 会问一次（等你回答期间面板照常可用）。
 
+### 点击跳转到哪里
+
+| 会话运行在 | 点击后跳到 |
+|---|---|
+| Terminal、iTerm2 | 精确到那个标签页（Apple Events，macOS 会问一次） |
+| tmux（在上述任意终端里） | 精确到那个窗格 |
+| WezTerm | 精确到那个窗格（`wezterm cli activate-pane`） |
+| kitty | 精确到那个窗口，前提是 kitty.conf 里开了 `allow_remote_control` 和 `listen_on` |
+| Ghostty 1.3+ | 工作目录相同的那个标签页（AppleScript） |
+| VS Code、Cursor | 打开了该文件夹的那个窗口（内置终端的具体标签页无法从外部选中） |
+| Warp、Alacritty、Codex 桌面版 | 把 app 调到前面 |
+
+目前只有 Terminal 和 iTerm2 在真机上测过，其他终端欢迎反馈。
+
 ## 隐私
 
 - 没有账号，没有遥测，没有统计。

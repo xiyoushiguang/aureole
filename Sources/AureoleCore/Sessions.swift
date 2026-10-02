@@ -25,6 +25,10 @@ public struct AgentSession: Codable, Equatable, Identifiable, Sendable {
     public var termSessionId: String?
     public var bundleId: String?
     public var tmuxPane: String?
+    /// Pane / window ids for terminals that can be told to focus one from outside.
+    public var weztermPane: String?
+    public var kittyWindowId: String?
+    public var kittyListenOn: String?
     public var startedAt: Date
     public var updatedAt: Date
     public var state: SessionState

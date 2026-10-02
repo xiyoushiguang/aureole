@@ -61,6 +61,9 @@ func fillProcessInfo(_ s: inout AgentSession) {
     s.termSessionId = env["ITERM_SESSION_ID"] ?? env["TERM_SESSION_ID"]
     s.bundleId = env["__CFBundleIdentifier"]
     s.tmuxPane = env["TMUX_PANE"]
+    s.weztermPane = env["WEZTERM_PANE"]
+    s.kittyWindowId = env["KITTY_WINDOW_ID"]
+    s.kittyListenOn = env["KITTY_LISTEN_ON"]
     // Walk up from our parent; the CLI shows up as "claude" (the installed binary), "node" or "codex".
     var pid = getppid()
     var agent: pid_t = pid

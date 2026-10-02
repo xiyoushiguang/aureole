@@ -115,6 +115,20 @@ own transcript and kept in memory only. The helper prints nothing and exits 0, s
 a session. Jumping to a Terminal or iTerm2 tab uses Apple Events; macOS asks once (the panel
 keeps working while it waits for your answer).
 
+### Jumping to the terminal
+
+| Where the session runs | Click takes you to |
+|---|---|
+| Terminal, iTerm2 | the exact tab (Apple Events; macOS asks once) |
+| tmux (inside any of these) | the exact pane |
+| WezTerm | the exact pane (`wezterm cli activate-pane`) |
+| kitty | the exact window, if `allow_remote_control` and `listen_on` are set in kitty.conf |
+| Ghostty 1.3+ | the tab whose working directory matches (AppleScript) |
+| VS Code, Cursor | the window with that folder open (their integrated terminals cannot be picked from outside) |
+| Warp, Alacritty, Codex desktop | the app comes to the front |
+
+Only Terminal and iTerm2 have been tested on real hardware so far; reports for the others are welcome.
+
 ## Privacy
 
 - No accounts, no telemetry, no analytics.
