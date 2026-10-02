@@ -32,7 +32,10 @@ sun.
 
 - **5-hour session and weekly windows** for Claude (Claude Code sign-in) and Codex (Codex CLI sign-in),
   including per-model weekly limits when your plan has them.
-- **Sessions.** Every Claude Code session, waiting / working / idle, on one screen (see below).
+- **Sessions.** Every Claude Code session, waiting / done / working / idle, on one screen (see below).
+- **It calls you.** The closed notch shows "● Waiting 2 · ✓ Done 1" when a session needs you, and a
+  session waiting for minutes or a finished task is announced through your notification channels.
+- **Weekly forecast** from the week's average pace: "Claude weekly 40% · runs out Thu 15:00".
 - **A plain layout too.** Settings → Panel layout → List swaps the picture for pace bars and a task
   list in a narrower panel.
 - **Polite polling.** Once a minute while your numbers move, slowing to every five minutes when they don't; obeys `Retry-After` when a vendor asks for a pause, and shows the last known numbers meanwhile.

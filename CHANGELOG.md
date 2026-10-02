@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-10-02
 
 - **Weekly forecast.** Weekly windows (and per-model weeklies, and Codex's weekly) are forecast from
   the week's average pace, shown as %/day with a weekday ("runs out Thu 15:00"), and announced once
