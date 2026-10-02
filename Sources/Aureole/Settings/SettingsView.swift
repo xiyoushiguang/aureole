@@ -150,6 +150,13 @@ struct SessionsTab: View {
                     ForEach([1, 2, 5, 10], id: \.self) { Text(L10n.f("after %d min", $0)).tag($0) }
                 }
                 Toggle(L10n.t("Notify when a task is done"), isOn: $settings.notifyDone)
+                Picker(L10n.t("Approve requests from the panel"), selection: $settings.approveFromPanelSeconds) {
+                    Text(L10n.t("Off")).tag(0)
+                    ForEach([15, 30, 60], id: \.self) { Text(L10n.f("wait up to %d s", $0)).tag($0) }
+                }
+                .onChange(of: settings.approveFromPanelSeconds) { _, v in if v > 0 { sessions.refreshHookTimeouts() } }
+                Text(L10n.t("Hover a waiting session to see the full request and choose Allow once or Deny. Nothing is ever allowed without that click, and there is no \"always allow\". While Aureole waits, the terminal prompt is held back; if you do not answer in time, it appears as usual."))
+                    .font(.caption).foregroundStyle(.secondary)
                 Text(L10n.t("Uses the same channels as usage alerts (macOS notification, WeChat, etc.)."))
                     .font(.caption).foregroundStyle(.secondary)
             }

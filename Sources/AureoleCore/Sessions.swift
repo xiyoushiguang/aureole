@@ -111,6 +111,7 @@ public struct HookEvent {
     public var transcriptPath: String?
     public var toolName: String?
     public var toolInput: [String: Any]?
+    public var toolUseId: String?
     public var message: String?
     public var notificationType: String?
     public var prompt: String?
@@ -124,6 +125,7 @@ public struct HookEvent {
         transcriptPath = json["transcript_path"] as? String
         toolName = json["tool_name"] as? String
         toolInput = json["tool_input"] as? [String: Any]
+        toolUseId = json["tool_use_id"] as? String
         message = json["message"] as? String
         notificationType = json["notification_type"] as? String
         prompt = json["prompt"] as? String
@@ -366,7 +368,9 @@ public enum HookInstaller {
                 return e
             }
             if install {
-                list.append(["hooks": [["type": "command", "command": quoted(helperPath) + arguments, "timeout": 5]]])
+                // PermissionRequest may wait for a click in the panel (at most a minute) when that is turned on.
+                let timeout = event == "PermissionRequest" ? 120 : 5
+                list.append(["hooks": [["type": "command", "command": quoted(helperPath) + arguments, "timeout": timeout]]])
             }
             if list.isEmpty { hooks[event] = nil } else { hooks[event] = list }
         }

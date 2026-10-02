@@ -1,6 +1,8 @@
 // aureole-hook: a Claude Code hook that records what each session is doing.
 // Reads the hook JSON from stdin, folds it into ~/Library/Application Support/Aureole/sessions/<id>.json,
-// prints nothing and always exits 0, so it can never block or alter a session.
+// prints nothing and always exits 0, so it never alters a session on its own. The one exception is opt-in:
+// with "approve from the panel" on, a PermissionRequest waits briefly for the user's click in Aureole and
+// prints that decision; with no click it prints nothing and the agent asks as usual.
 // With --statusline it is Claude Code's status line command instead: it saves the usage and context
 // numbers, then runs the user's own status line (if they had one) and prints what that prints.
 import Foundation
@@ -32,6 +34,25 @@ func main() {
         return
     }
     try? SessionFiles.save(session)
+    if event.name == "PermissionRequest" { offerPanelApproval(event, session: session) }
+}
+
+/// When "approve from the panel" is on, show the request in Aureole and wait briefly for a click.
+/// No click in time: print nothing, and the agent asks in the terminal as usual.
+func offerPanelApproval(_ event: HookEvent, session: AgentSession) {
+    let seconds = UserDefaults(suiteName: "app.aureole.Aureole")?.integer(forKey: ApprovalFiles.waitKey) ?? 0
+    guard seconds > 0, let tool = event.toolName else { return }
+    let now = Date()
+    let request = ApprovalRequest(id: event.toolUseId ?? UUID().uuidString, sessionId: event.sessionId,
+                                  provider: session.provider, tool: tool,
+                                  full: ApprovalRequest.fullText(tool: tool, input: event.toolInput),
+                                  at: now, expires: now.addingTimeInterval(TimeInterval(min(seconds, 60))))
+    guard (try? ApprovalFiles.save(request)) != nil else { return }
+    let decision = ApprovalFiles.wait(for: request.id, until: request.expires)
+    ApprovalFiles.remove(request.id)
+    if let decision {
+        FileHandle.standardOutput.write(Data(decision.hookOutput.utf8))
+    }
 }
 
 func statusline() {

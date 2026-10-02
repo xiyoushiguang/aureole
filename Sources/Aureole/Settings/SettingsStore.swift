@@ -44,6 +44,9 @@ final class SettingsStore: ObservableObject {
     @Published var notifyDone: Bool { didSet { defaults.set(notifyDone, forKey: "notifyDone") } }
     /// Ask GitHub once a day whether a newer release is out.
     @Published var checkUpdates: Bool { didSet { defaults.set(checkUpdates, forKey: "checkUpdates") } }
+    /// Seconds a permission request waits for a click in the panel before the terminal asks; 0 = off.
+    /// Stored where the hook helper reads it.
+    @Published var approveFromPanelSeconds: Int { didSet { defaults.set(approveFromPanelSeconds, forKey: ApprovalFiles.waitKey) } }
     @Published var sessionsEnabled: Bool { didSet { defaults.set(sessionsEnabled, forKey: "sessionsEnabled") } }
     /// The hook helper reads this key too (via the app's defaults domain) to decide whether to keep a prompt excerpt.
     @Published var sessionPromptPreview: Bool { didSet { defaults.set(sessionPromptPreview, forKey: "sessionPromptPreview") } }
@@ -72,6 +75,7 @@ final class SettingsStore: ObservableObject {
         notifyWaitingMinutes = d.object(forKey: "notifyWaitingMinutes") as? Int ?? 2
         notifyDone = d.object(forKey: "notifyDone") as? Bool ?? true
         checkUpdates = d.object(forKey: "checkUpdates") as? Bool ?? true
+        approveFromPanelSeconds = d.object(forKey: ApprovalFiles.waitKey) as? Int ?? 0
         sessionsEnabled = d.object(forKey: "sessionsEnabled") as? Bool ?? true
         sessionPromptPreview = d.object(forKey: "sessionPromptPreview") as? Bool ?? true
         if let data = try? Data(contentsOf: channelsURL),

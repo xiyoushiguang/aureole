@@ -27,6 +27,9 @@ final class SessionStore: ObservableObject {
     private let directory = SessionFiles.directory
     private var source: DispatchSourceFileSystemObject?
     private var fd: Int32 = -1
+    private var approvalSource: DispatchSourceFileSystemObject?
+    /// Permission requests waiting for a click in the panel, by session id (only when that feature is on).
+    @Published private(set) var approvals: [String: ApprovalRequest] = [:]
     private var timer: Timer?
     private var reloadWork: DispatchWorkItem?
     private var cancellables: Set<AnyCancellable> = []
@@ -61,6 +64,15 @@ final class SessionStore: ObservableObject {
     // MARK: - Files
 
     private func watch() {
+        // Approval requests appear in their own folder and must show up at once, not on the next tick.
+        let afd = open(ApprovalFiles.directory.path, O_EVTONLY)
+        if afd >= 0 {
+            let a = DispatchSource.makeFileSystemObjectSource(fileDescriptor: afd, eventMask: [.write, .rename, .delete], queue: .main)
+            a.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.scheduleReload() } }
+            a.setCancelHandler { close(afd) }
+            a.resume()
+            approvalSource = a
+        }
         fd = open(directory.path, O_EVTONLY)
         guard fd >= 0 else { return }
         let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .delete], queue: .main)
@@ -103,6 +115,11 @@ final class SessionStore: ObservableObject {
         if live != sessions { sessions = live }
         if newBoard != board { board = newBoard }
         refreshContext(for: live, now: now)
+        var open: [String: ApprovalRequest] = [:]
+        if settings.approveFromPanelSeconds > 0 {
+            for r in ApprovalFiles.pending(now: now) { open[r.sessionId] = r }
+        }
+        if open != approvals { approvals = open }
         var reported: [String: Double] = [:]
         for f in StatuslineFiles.loadAll(now: now) { if let pct = f.contextPercent { reported[f.sessionId] = pct / 100 } }
         if reported != contextReported { contextReported = reported }
@@ -110,6 +127,13 @@ final class SessionStore: ObservableObject {
         alerts.announceDone = settings.notifyDone
         let events = alerts.check(newBoard, now: now, name: name(of:))
         if !events.isEmpty { onEvents?(events) }
+    }
+
+    /// The user's click on a request card. Only reaches the agent while the hook is still waiting.
+    func decide(_ r: ApprovalRequest, _ d: ApprovalDecision) {
+        let ok = ApprovalFiles.decide(r.id, d)
+        AureoleLog.shared.log("panel \(d.rawValue) for \(r.tool) in \(r.sessionId.prefix(8))" + (ok ? "" : " (too late, the terminal is asking)"))
+        approvals[r.sessionId] = nil
     }
 
     /// You looked at this session (jumped to it), so its finished task is no longer news.
@@ -248,6 +272,12 @@ final class SessionStore: ObservableObject {
     }
 
     func installHooks() { setHooks(installed: true) }
+
+    /// Re-registers installed hooks so PermissionRequest gets the longer timeout panel approval needs.
+    func refreshHookTimeouts() {
+        if hookStatus != .notInstalled { setHooks(installed: true) }
+        if codexHookStatus != .notInstalled { setCodexHooks(installed: true) }
+    }
     func uninstallHooks() { setHooks(installed: false) }
 
     private func setHooks(installed: Bool) {

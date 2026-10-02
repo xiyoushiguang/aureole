@@ -110,7 +110,9 @@ struct HorizonPanel: View {
         }
         .overlay(alignment: .topTrailing) {
             if let id = focus, let lane = scene.lanes.first(where: { $0.id == id }) {
-                SessionCard(session: lane.session, name: sessions.name(of: lane.session), context: sessions.context[id], fraction: sessions.contextFraction(id), actions: actions)
+                SessionCard(session: lane.session, name: sessions.name(of: lane.session), context: sessions.context[id],
+                            fraction: sessions.contextFraction(id), approval: sessions.approvals[id],
+                            decide: { r, d in sessions.decide(r, d) }, actions: actions)
                     .frame(width: 318)
                     .onHover { inside in
                         hoveringCard = inside
@@ -161,7 +163,8 @@ struct HorizonPanel: View {
                 VStack(spacing: 0) {
                     ForEach(scene.lanes) { lane in
                         LaneRow(scene: scene, lane: lane, scale: s, name: sessions.name(of: lane.session),
-                                context: sessions.context[lane.id], fraction: sessions.contextFraction(lane.id), actions: actions, onHover: { laneHover(lane.id, $0) })
+                                context: sessions.context[lane.id], fraction: sessions.contextFraction(lane.id),
+                                approvable: sessions.approvals[lane.id] != nil, actions: actions, onHover: { laneHover(lane.id, $0) })
                             .frame(height: Self.laneHeight)
                     }
                 }
@@ -407,6 +410,8 @@ struct LaneRow: View {
     let context: Int?
     /// Context used, 0...1: reported by the status line when installed, else estimated from `context`.
     let fraction: Double?
+    /// A permission request can be answered from this lane's card.
+    var approvable = false
     weak var actions: AppActions?
     var onHover: (Bool) -> Void = { _ in }
     @State private var hovered = false
@@ -430,6 +435,13 @@ struct LaneRow: View {
                             .font(.system(size: 13, weight: waiting ? .semibold : .medium))
                             .foregroundStyle(Color.white.opacity(lane.role == .idle ? 0.6 : 0.95))
                         Spacer(minLength: 8)
+                        if approvable {
+                            Text(L10n.t("Approve here"))
+                                .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Theme.amber)
+                                .padding(.horizontal, 7).padding(.vertical, 1)
+                                .overlay(Capsule().stroke(Theme.amber.opacity(0.7), lineWidth: 1))
+                                .fixedSize()
+                        }
                         SessionBadge(session: s, done: lane.role == .done)
                     }
                     HStack(spacing: 8) {
@@ -540,6 +552,8 @@ struct SessionCard: View {
     let name: String
     let context: Int?
     let fraction: Double?
+    var approval: ApprovalRequest?
+    var decide: (ApprovalRequest, ApprovalDecision) -> Void = { _, _ in }
     weak var actions: AppActions?
 
     var body: some View {
@@ -557,7 +571,11 @@ struct SessionCard: View {
                         .fixedSize()
                 }
             }
-            if let m = s.waitingMessage { row(L10n.t("Requesting"), m, mono: true) }
+            if let r = approval {
+                approvalBlock(r)
+            } else if let m = s.waitingMessage {
+                row(L10n.t("Requesting"), m, mono: true)
+            }
             if let p = s.promptPreview, !p.isEmpty { row(L10n.t("Prompt"), p) }
             if let recent = s.recent, !recent.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -593,6 +611,38 @@ struct SessionCard: View {
         .overlay(RoundedRectangle(cornerRadius: 16)
             .stroke(s.state.needsYou ? Theme.amber.opacity(0.45) : Color.white.opacity(0.14), lineWidth: 1))
         .shadow(color: .black.opacity(0.5), radius: 18, y: 8)
+    }
+
+    /// The whole request, untruncated, and the only two answers on offer.
+    private func approvalBlock(_ r: ApprovalRequest) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(r.tool).font(.system(size: 11, weight: .semibold)).foregroundStyle(HorizonColor.label)
+            ScrollView {
+                Text(r.full)
+                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(.white)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 140)
+            .padding(8)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.45)))
+            HStack(spacing: 8) {
+                Button { decide(r, .allow) } label: {
+                    Text(L10n.t("Allow once")).font(.system(size: 12, weight: .semibold)).foregroundStyle(.black)
+                        .padding(.horizontal, 14).frame(height: 28).background(Capsule().fill(Theme.amber))
+                }
+                Button { decide(r, .deny) } label: {
+                    Text(L10n.t("Deny")).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 14).frame(height: 28).background(Capsule().stroke(Color.white.opacity(0.5)))
+                }
+                Spacer(minLength: 4)
+                TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                    Text(L10n.f("Terminal asks in %d s", max(0, Int(r.expires.timeIntervalSince(ctx.date).rounded()))))
+                        .font(.system(size: 10.5).monospacedDigit()).foregroundStyle(HorizonColor.label)
+                }
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     private func row(_ key: String, _ value: String, mono: Bool = false) -> some View {
