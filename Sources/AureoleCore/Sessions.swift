@@ -35,6 +35,8 @@ public struct AgentSession: Codable, Equatable, Identifiable, Sendable {
     public var waitingMessage: String?
     public var promptPreview: String?
     public var turns: Int = 0
+    /// When the current (or last) turn began; tells a long task that finished from a quick reply.
+    public var turnStartedAt: Date?
     /// The last few tool calls, newest first. Optional so files written by older helpers still decode.
     public var recent: [SessionActivity]?
     /// Working and waiting stretches over the last few hours, oldest first; the last one may still be open.
@@ -140,6 +142,7 @@ public enum SessionReducer {
         case "UserPromptSubmit":
             s.set(.working, at: now)
             s.turns += 1
+            s.turnStartedAt = now
             s.waitingMessage = nil
             s.lastTool = nil
             s.lastDetail = nil
@@ -223,29 +226,43 @@ public enum SessionReducer {
 /// Sorting and grouping for the panel. `alive` tells whether the agent process still exists.
 public struct SessionBoard: Equatable, Sendable {
     public var waiting: [AgentSession] = []
+    /// Finished a real task (not a quick reply) and you have not looked yet.
+    public var done: [AgentSession] = []
     public var working: [AgentSession] = []
     public var idle: [AgentSession] = []
 
     public init() {}
 
-    public var isEmpty: Bool { waiting.isEmpty && working.isEmpty && idle.isEmpty }
-    public var all: [AgentSession] { waiting + working + idle }
+    public var isEmpty: Bool { waiting.isEmpty && done.isEmpty && working.isEmpty && idle.isEmpty }
+    public var all: [AgentSession] { waiting + done + working + idle }
+
+    /// A turn this long or longer counts as a task worth telling you about when it ends.
+    public static let doneMinimumTurn: TimeInterval = 60
+
+    /// The session just finished a task of at least `doneMinimumTurn`.
+    public static func finishedTask(_ s: AgentSession) -> Bool {
+        guard s.state == .idle, s.lastEvent == "Stop", let start = s.turnStartedAt else { return false }
+        return s.stateSince.timeIntervalSince(start) >= doneMinimumTurn
+    }
 
     /// Sessions that have not reported anything for this long are treated as gone even if a process is still alive.
     public static let staleAfter: TimeInterval = 6 * 3600
 
-    public static func build(_ sessions: [AgentSession], now: Date, alive: (AgentSession) -> Bool) -> SessionBoard {
+    /// `seen` says whether you have already looked at a finished session (by jumping to it).
+    public static func build(_ sessions: [AgentSession], now: Date, alive: (AgentSession) -> Bool,
+                             seen: (AgentSession) -> Bool = { _ in false }) -> SessionBoard {
         var b = SessionBoard()
         for s in sessions {
             guard s.state != .ended, now.timeIntervalSince(s.updatedAt) < staleAfter, alive(s) else { continue }
             switch s.state {
             case .waitingPermission, .waitingInput: b.waiting.append(s)
             case .working: b.working.append(s)
-            case .idle: b.idle.append(s)
+            case .idle: if finishedTask(s) && !seen(s) { b.done.append(s) } else { b.idle.append(s) }
             case .ended: break
             }
         }
         b.waiting.sort { $0.stateSince < $1.stateSince }      // longest wait first
+        b.done.sort { $0.stateSince > $1.stateSince }
         b.working.sort { $0.updatedAt > $1.updatedAt }
         b.idle.sort { $0.updatedAt > $1.updatedAt }
         return b
@@ -410,3 +427,45 @@ public enum TranscriptReader {
         return "\(tokens)"
     }
 }
+
+/// Decides when a session is worth a notification: waiting on you for a while, or done with a task.
+/// Each wait and each finish is announced once; `sent` remembers which.
+public struct SessionAlerts: Sendable {
+    /// Announce a wait after this long; nil turns wait alerts off.
+    public var waitingAfter: TimeInterval?
+    public var announceDone: Bool
+    /// Finishes older than this (e.g. found on launch) are not announced.
+    public var doneFreshness: TimeInterval = 10 * 60
+    /// "session|kind|stateSince" keys already announced.
+    public private(set) var sent: Set<String> = []
+
+    public init(waitingAfter: TimeInterval?, announceDone: Bool) {
+        self.waitingAfter = waitingAfter
+        self.announceDone = announceDone
+    }
+
+    public mutating func check(_ board: SessionBoard, now: Date, name: (AgentSession) -> String) -> [UsageEvent] {
+        var out: [UsageEvent] = []
+        if let after = waitingAfter {
+            for s in board.waiting where now.timeIntervalSince(s.stateSince) >= after {
+                if mark(s, "waiting") {
+                    out.append(.sessionWaiting(provider: s.provider, name: name(s), detail: s.waitingMessage, since: s.stateSince))
+                }
+            }
+        }
+        if announceDone {
+            for s in board.done where now.timeIntervalSince(s.stateSince) <= doneFreshness {
+                if mark(s, "done") {
+                    out.append(.sessionDone(provider: s.provider, name: name(s), took: s.stateSince.timeIntervalSince(s.turnStartedAt ?? s.stateSince)))
+                }
+            }
+        }
+        if sent.count > 500 { sent.removeAll() }
+        return out
+    }
+
+    private mutating func mark(_ s: AgentSession, _ kind: String) -> Bool {
+        sent.insert("\(s.sessionId)|\(kind)|\(Int(s.stateSince.timeIntervalSince1970))").inserted
+    }
+}
+

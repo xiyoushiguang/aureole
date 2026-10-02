@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **The closed notch says when something needs you.** A line drops below the notch:
+  "● Waiting 2 · ✓ Done 1", the dot breathing while a session waits. No need to hover to find out.
+- **Notifications for sessions.** A session that has waited on you for 2 minutes (configurable, or off)
+  and a task that finished are announced through the same channels as usage alerts: macOS
+  notifications, WeChat (ServerChan), Bark, Telegram and the rest. Each wait and each finish once.
+- **Done, unseen.** A turn that ran a minute or more and then stopped shows as a blue "done · unseen"
+  lane until you jump to it, instead of looking like any other idle session.
+
 ## 0.2.1 — 2026-10-01
 
 - **Waiting capsule.** Sessions that need you get an amber capsule under the conclusion, with a jump

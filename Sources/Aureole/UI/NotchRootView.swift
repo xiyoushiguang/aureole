@@ -23,6 +23,7 @@ struct NotchRootView: View {
         .frame(width: size.width, height: size.height)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(.spring(response: 0.36, dampingFraction: 0.84), value: model.isOpen)
+        .animation(.spring(response: 0.36, dampingFraction: 0.84), value: model.needsAttention)
         .animation(.easeOut(duration: 0.18), value: model.openContentHeight)
         .id(settings.language)
         .onPreferenceChange(OpenContentHeightKey.self) { h in
@@ -71,9 +72,15 @@ struct ClosedNotchView: View {
     var body: some View {
         let inset: CGFloat = 12
         let gap: CGFloat = 8
-        HStack(spacing: gap) {
-            halo(.claude, mirrored: true)
-            halo(.codex, mirrored: false)
+        VStack(spacing: 4) {
+            if model.needsAttention {
+                AttentionLine(waiting: model.waitingCount, done: model.doneCount)
+                    .transition(.opacity)
+            }
+            HStack(spacing: gap) {
+                halo(.claude, mirrored: true)
+                halo(.codex, mirrored: false)
+            }
         }
         .padding(.horizontal, inset)
         .padding(.bottom, 2)
@@ -102,6 +109,38 @@ struct ClosedNotchView: View {
             }
         }
         .frame(height: 2.5)
+    }
+}
+
+/// Under the closed notch: "● Waiting 2 · ✓ Done 1", the amber dot breathing while anyone waits.
+struct AttentionLine: View {
+    let waiting: Int
+    let done: Int
+    @State private var pulse = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if waiting > 0 {
+                HStack(spacing: 5) {
+                    Circle().fill(Theme.amber).frame(width: 7, height: 7)
+                        .shadow(color: Theme.amber.opacity(pulse ? 1 : 0.3), radius: pulse ? 5 : 1)
+                        .opacity(pulse ? 1 : 0.55)
+                    Text(L10n.f("Waiting %d", waiting)).foregroundStyle(Theme.amber)
+                }
+            }
+            if done > 0 {
+                HStack(spacing: 4) {
+                    Text("✓").foregroundStyle(Theme.done)
+                    Text(L10n.f("Done %d", done)).foregroundStyle(Theme.done)
+                }
+            }
+        }
+        .font(.system(size: 11, weight: .semibold))
+        .lineLimit(1)
+        .frame(height: 14)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { pulse = true }
+        }
     }
 }
 

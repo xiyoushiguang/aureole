@@ -34,6 +34,7 @@ enum HorizonColor {
     static func dot(_ lane: HorizonLane) -> Color {
         switch lane.role {
         case .waiting: return Theme.amber
+        case .done: return Theme.done
         case .working: return lane.session.provider == .claude ? claudeBright : codexBright
         case .idle: return .white.opacity(0.45)
         }
@@ -179,6 +180,7 @@ struct HorizonPanel: View {
             key(Theme.claude, L10n.t("Claude working"))
             key(Theme.codex, L10n.t("Codex working"))
             key(Theme.amber, L10n.t("Waiting on you"))
+            key(Theme.done, L10n.t("Done"))
             HStack(spacing: 6) {
                 Circle().stroke(Color.white.opacity(0.8), lineWidth: 2).frame(width: 9, height: 9)
                 Text(L10n.t("Small ring = context used"))
@@ -414,7 +416,8 @@ struct LaneRow: View {
         Button { actions?.jump(to: s) } label: {
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(waiting ? Theme.amber.opacity(hovered ? 0.14 : 0.08) : Color.white.opacity(hovered ? 0.06 : 0))
+                    .fill(waiting ? Theme.amber.opacity(hovered ? 0.14 : 0.08)
+                          : lane.role == .done ? Theme.done.opacity(hovered ? 0.12 : 0.06) : Color.white.opacity(hovered ? 0.06 : 0))
                     .padding(.horizontal, 12).padding(.vertical, 2)
                 LaneBackdrop(scene: scene, lane: lane, scale: scale)
                 SessionLight(lane: lane, context: fraction)
@@ -425,7 +428,7 @@ struct LaneRow: View {
                             .font(.system(size: 13, weight: waiting ? .semibold : .medium))
                             .foregroundStyle(Color.white.opacity(lane.role == .idle ? 0.6 : 0.95))
                         Spacer(minLength: 8)
-                        badge(s)
+                        SessionBadge(session: s, done: lane.role == .done)
                     }
                     HStack(spacing: 8) {
                         Text(doing(s))
@@ -442,22 +445,6 @@ struct LaneRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0; onHover($0) }
-    }
-
-    @ViewBuilder
-    private func badge(_ s: AgentSession) -> some View {
-        switch s.state {
-        case .waitingPermission, .waitingInput:
-            Text(SessionText.waitStatus(s))
-                .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Color(hex: 0x1A1305))
-                .padding(.horizontal, 8).padding(.vertical, 2)
-                .background(Capsule().fill(Theme.amber))
-        case .working:
-            Text(L10n.t("working")).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Theme.accent(s.provider))
-        case .idle, .ended:
-            Text(L10n.t("idle") + " " + Formatting.countdown(Date().timeIntervalSince(s.stateSince)))
-                .font(.system(size: 10.5)).foregroundStyle(Theme.dim)
-        }
     }
 
     /// What it is doing (or asking) right now, in one line.

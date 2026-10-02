@@ -15,6 +15,11 @@ final class SessionStore: ObservableObject {
     @Published private(set) var lastError: String?
 
     let settings: SettingsStore
+    /// Where wait/done alerts go; the app points this at the usage store's channels.
+    var onEvents: (([UsageEvent]) -> Void)?
+    private var alerts = SessionAlerts(waitingAfter: 120, announceDone: true)
+    /// Finished sessions you have looked at: session id → the finish time you saw. Kept across launches.
+    private var seen: [String: Double] = UserDefaults.standard.dictionary(forKey: "seenSessions") as? [String: Double] ?? [:]
     private let directory = SessionFiles.directory
     private var source: DispatchSourceFileSystemObject?
     private var fd: Int32 = -1
@@ -88,10 +93,26 @@ final class SessionStore: ObservableObject {
             }
             live.append(s)
         }
-        let newBoard = SessionBoard.build(live, now: now) { _ in true }
+        let newBoard = SessionBoard.build(live, now: now, alive: { _ in true }, seen: { [seen] s in
+            seen[s.sessionId].map { abs($0 - s.stateSince.timeIntervalSince1970) < 1 } ?? false
+        })
         if live != sessions { sessions = live }
         if newBoard != board { board = newBoard }
         refreshContext(for: live, now: now)
+        alerts.waitingAfter = settings.notifyWaitingMinutes > 0 ? TimeInterval(settings.notifyWaitingMinutes * 60) : nil
+        alerts.announceDone = settings.notifyDone
+        let events = alerts.check(newBoard, now: now, name: name(of:))
+        if !events.isEmpty { onEvents?(events) }
+    }
+
+    /// You looked at this session (jumped to it), so its finished task is no longer news.
+    func acknowledge(_ s: AgentSession) {
+        guard SessionBoard.finishedTask(s) else { return }
+        seen[s.sessionId] = s.stateSince.timeIntervalSince1970
+        let live = Set(sessions.map(\.sessionId))
+        seen = seen.filter { live.contains($0.key) }
+        UserDefaults.standard.set(seen, forKey: "seenSessions")
+        reload()
     }
 
     /// Transcripts run to tens of MB, so read each tail off the main thread and at most every 15 s per session.

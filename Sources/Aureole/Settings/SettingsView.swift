@@ -116,6 +116,13 @@ struct SessionsTab: View {
                     Text(err).font(.caption).foregroundStyle(.orange)
                 }
                 Toggle(L10n.t("Keep an 80-character excerpt of each prompt"), isOn: $settings.sessionPromptPreview)
+                Picker(L10n.t("Notify when a session waits"), selection: $settings.notifyWaitingMinutes) {
+                    Text(L10n.t("Off")).tag(0)
+                    ForEach([1, 2, 5, 10], id: \.self) { Text(L10n.f("after %d min", $0)).tag($0) }
+                }
+                Toggle(L10n.t("Notify when a task is done"), isOn: $settings.notifyDone)
+                Text(L10n.t("Uses the same channels as usage alerts (macOS notification, WeChat, etc.)."))
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section {
                 Text(L10n.t("Aureole adds a small helper to ~/.claude/settings.json that runs on each hook event and writes one file per session under Application Support (0600): folder, state, the current tool, and an optional prompt excerpt. Nothing leaves this Mac. Your other hooks are kept."))

@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
                                                object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.notch?.attach(to: Self.preferredScreen()) }
         }
+        sessions.onEvents = { [weak self] in self?.store.dispatch($0) }
         store.start()
         sessions.start()
         installDebugCommands()
@@ -72,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
     func togglePinned() { notch?.togglePinned() }
     func jump(to session: AgentSession) {
         notch?.setPinnedOpen(false)
+        sessions.acknowledge(session)
         sessions.jump(to: session)
     }
     func quit() { NSApp.terminate(nil) }

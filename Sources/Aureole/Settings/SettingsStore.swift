@@ -39,6 +39,9 @@ final class SettingsStore: ObservableObject {
     @Published var nativeNotifications: Bool { didSet { defaults.set(nativeNotifications, forKey: "nativeNotifications") } }
     @Published var panelStyle: PanelStyle { didSet { defaults.set(panelStyle.rawValue, forKey: "panelStyle") } }
     @Published var panelLayout: PanelLayout { didSet { defaults.set(panelLayout.rawValue, forKey: "panelLayout") } }
+    /// Minutes a session may wait on you before a notification goes out; 0 turns it off.
+    @Published var notifyWaitingMinutes: Int { didSet { defaults.set(notifyWaitingMinutes, forKey: "notifyWaitingMinutes") } }
+    @Published var notifyDone: Bool { didSet { defaults.set(notifyDone, forKey: "notifyDone") } }
     @Published var sessionsEnabled: Bool { didSet { defaults.set(sessionsEnabled, forKey: "sessionsEnabled") } }
     /// The hook helper reads this key too (via the app's defaults domain) to decide whether to keep a prompt excerpt.
     @Published var sessionPromptPreview: Bool { didSet { defaults.set(sessionPromptPreview, forKey: "sessionPromptPreview") } }
@@ -64,6 +67,8 @@ final class SettingsStore: ObservableObject {
         language = Language(rawValue: d.string(forKey: "language") ?? "") ?? .system
         panelStyle = PanelStyle(rawValue: d.string(forKey: "panelStyle") ?? "") ?? .solid
         panelLayout = PanelLayout(rawValue: d.string(forKey: "panelLayout") ?? "") ?? .horizon
+        notifyWaitingMinutes = d.object(forKey: "notifyWaitingMinutes") as? Int ?? 2
+        notifyDone = d.object(forKey: "notifyDone") as? Bool ?? true
         sessionsEnabled = d.object(forKey: "sessionsEnabled") as? Bool ?? true
         sessionPromptPreview = d.object(forKey: "sessionPromptPreview") as? Bool ?? true
         if let data = try? Data(contentsOf: channelsURL),

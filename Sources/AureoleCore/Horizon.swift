@@ -95,7 +95,7 @@ public struct HorizonTick: Equatable, Sendable {
 
 /// One session's lane: its working/waiting stretches over the visible past, and what it is doing now.
 public struct HorizonLane: Equatable, Sendable, Identifiable {
-    public enum Role: Equatable, Sendable { case waiting, working, idle }
+    public enum Role: Equatable, Sendable { case waiting, done, working, idle }
     public struct Segment: Equatable, Sendable {
         public let from: Double
         public let to: Double
@@ -129,7 +129,7 @@ public struct HorizonScene: Equatable, Sendable {
     /// What steady use would look like: 0% at the window start, 100% at the reset.
     public let paceLine: [CGPoint]
     public let ticks: [HorizonTick]
-    /// Waiting on you first (longest wait first), then working, then idle.
+    /// Waiting on you first (longest wait first), then finished-unseen, then working, then idle.
     public let lanes: [HorizonLane]
 
     public static func == (a: HorizonScene, b: HorizonScene) -> Bool {
@@ -231,6 +231,7 @@ public struct HorizonScene: Equatable, Sendable {
 
     static func lanes(_ board: SessionBoard, clock: HorizonClock) -> [HorizonLane] {
         board.waiting.map { HorizonLane(session: $0, role: .waiting, segments: segments($0, clock: clock)) }
+            + board.done.map { HorizonLane(session: $0, role: .done, segments: segments($0, clock: clock)) }
             + board.working.map { HorizonLane(session: $0, role: .working, segments: segments($0, clock: clock)) }
             + board.idle.map { HorizonLane(session: $0, role: .idle, segments: segments($0, clock: clock)) }
     }

@@ -5,10 +5,15 @@ public enum UsageEvent: Equatable, Sendable {
     case reset(provider: ProviderID, window: UsageWindow)
     case forecast(provider: ProviderID, window: UsageWindow, exhaustAt: Date)
     case authLost(provider: ProviderID, message: String)
+    /// A session has been waiting on you (permission or question) since `since`.
+    case sessionWaiting(provider: ProviderID, name: String, detail: String?, since: Date)
+    /// A session finished a task that took `took`.
+    case sessionDone(provider: ProviderID, name: String, took: TimeInterval)
 
     public var provider: ProviderID {
         switch self {
-        case .threshold(let p, _, _), .reset(let p, _), .forecast(let p, _, _), .authLost(let p, _): return p
+        case .threshold(let p, _, _), .reset(let p, _), .forecast(let p, _, _), .authLost(let p, _),
+             .sessionWaiting(let p, _, _, _), .sessionDone(let p, _, _): return p
         }
     }
 
@@ -18,6 +23,8 @@ public enum UsageEvent: Equatable, Sendable {
         case .reset: return "reset"
         case .forecast: return "forecast"
         case .authLost: return "auth_lost"
+        case .sessionWaiting: return "session_waiting"
+        case .sessionDone: return "session_done"
         }
     }
 
@@ -27,6 +34,8 @@ public enum UsageEvent: Equatable, Sendable {
         case .reset(let p, let w): return L10n.f("%@ %@ window reset", p.displayName, w.displayLabel)
         case .forecast(let p, let w, _): return L10n.f("%@ %@ will run out before reset", p.displayName, w.displayLabel)
         case .authLost(let p, _): return L10n.f("%@ sign-in needed", p.displayName)
+        case .sessionWaiting(_, let name, _, _): return L10n.f("%@ is waiting for you", name)
+        case .sessionDone(_, let name, _): return L10n.f("%@ is done", name)
         }
     }
 
@@ -40,13 +49,18 @@ public enum UsageEvent: Equatable, Sendable {
             return L10n.f("At the current pace it hits 100%% around %@", Formatting.clock(at)) + (w.resetsAt.map { L10n.f(", reset is %@", Formatting.resetText($0)) } ?? "")
         case .authLost(_, let m):
             return m
+        case .sessionWaiting(_, _, let detail, let since):
+            let waited = L10n.f("waited %@", Formatting.countdown(Date().timeIntervalSince(since)))
+            return detail.map { "\($0) · \(waited)" } ?? waited
+        case .sessionDone(_, _, let took):
+            return L10n.f("Finished after %@", Formatting.countdown(took))
         }
     }
 
     public var percent: Double? {
         switch self {
         case .threshold(_, let w, _), .reset(_, let w), .forecast(_, let w, _): return w.usedPercent
-        case .authLost: return nil
+        case .authLost, .sessionWaiting, .sessionDone: return nil
         }
     }
 }

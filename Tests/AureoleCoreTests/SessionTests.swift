@@ -151,4 +151,48 @@ final class SessionTests: XCTestCase {
         let back = try JSONDecoder.aureole.decode(AgentSession.self, from: JSONSerialization.data(withJSONObject: json))
         XCTAssertNil(back.spans)
     }
+
+    func testLongTurnThatStoppedIsDoneUntilSeen() {
+        var long = SessionReducer.apply(event("UserPromptSubmit", ["prompt": "x"]), to: nil, now: t0)
+        XCTAssertEqual(long.turnStartedAt, t0)
+        long = SessionReducer.apply(event("Stop"), to: long, now: t0 + 300)
+        XCTAssertTrue(SessionBoard.finishedTask(long))
+        var quick = SessionReducer.apply(event("UserPromptSubmit", ["prompt": "x"]), to: nil, now: t0)
+        quick.sessionId = "quick"
+        quick = SessionReducer.apply(event("Stop"), to: quick, now: t0 + 20)
+        XCTAssertFalse(SessionBoard.finishedTask(quick))   // a quick reply is not news
+
+        var b = SessionBoard.build([long, quick], now: t0 + 310, alive: { _ in true })
+        XCTAssertEqual(b.done.map(\.id), [long.id])
+        XCTAssertEqual(b.idle.map(\.id), ["quick"])
+        b = SessionBoard.build([long, quick], now: t0 + 310, alive: { _ in true }, seen: { $0.id == long.id })
+        XCTAssertTrue(b.done.isEmpty)
+        XCTAssertEqual(b.idle.count, 2)
+    }
+
+    func testAlertsFireOncePerWaitAndPerFinish() {
+        var waiting = SessionReducer.apply(event("Notification", ["notification_type": "permission_prompt", "message": "Bash: npm test"]), to: nil, now: t0)
+        waiting.sessionId = "w"
+        var done = SessionReducer.apply(event("UserPromptSubmit", ["prompt": "x"]), to: nil, now: t0 - 600)
+        done = SessionReducer.apply(event("Stop"), to: done, now: t0)
+        var board = SessionBoard.build([waiting, done], now: t0 + 30, alive: { _ in true })
+        var alerts = SessionAlerts(waitingAfter: 120, announceDone: true)
+
+        var events = alerts.check(board, now: t0 + 30, name: \.projectName)
+        XCTAssertEqual(events.map(\.kind), ["session_done"])               // the wait is too fresh
+        events = alerts.check(board, now: t0 + 130, name: \.projectName)
+        XCTAssertEqual(events.map(\.kind), ["session_waiting"])
+        XCTAssertEqual(alerts.check(board, now: t0 + 400, name: \.projectName), [])   // never twice
+
+        // A new wait on the same session is announced again.
+        waiting = SessionReducer.apply(event("PostToolUse"), to: waiting, now: t0 + 500)
+        waiting = SessionReducer.apply(event("Notification", ["notification_type": "permission_prompt"]), to: waiting, now: t0 + 600)
+        board = SessionBoard.build([waiting], now: t0 + 800, alive: { _ in true })
+        XCTAssertEqual(alerts.check(board, now: t0 + 800, name: \.projectName).map(\.kind), ["session_waiting"])
+
+        // Off means off; stale finishes found later are not announced.
+        var quiet = SessionAlerts(waitingAfter: nil, announceDone: true)
+        board = SessionBoard.build([waiting, done], now: t0 + 3600, alive: { _ in true })
+        XCTAssertEqual(quiet.check(board, now: t0 + 3600, name: \.projectName), [])
+    }
 }

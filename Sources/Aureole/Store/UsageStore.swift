@@ -183,7 +183,7 @@ final class UsageStore: ObservableObject {
         }
     }
 
-    private func dispatch(_ events: [UsageEvent]) {
+    func dispatch(_ events: [UsageEvent]) {
         guard !events.isEmpty else { return }
         persistSent()
         for event in events {

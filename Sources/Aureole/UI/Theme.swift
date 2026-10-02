@@ -6,6 +6,8 @@ enum Theme {
     static let codex = Color(red: 0.42, green: 0.80, blue: 0.72)
     static let amber = Color(red: 1.00, green: 0.73, blue: 0.32)
     static let red = Color(red: 1.00, green: 0.38, blue: 0.36)
+    /// A session finished a task you have not looked at.
+    static let done = Color(red: 0.55, green: 0.72, blue: 1.00)
     static let dim = Color.white.opacity(0.42)
     static let faint = Color.white.opacity(0.22)
 

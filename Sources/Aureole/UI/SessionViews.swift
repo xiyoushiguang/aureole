@@ -24,6 +24,7 @@ struct TaskList: View {
             ScrollView(.vertical, showsIndicators: contentHeight > maxHeight) {
                 VStack(alignment: .leading, spacing: 3) {
                     group(L10n.f("Needs you %d", b.waiting.count), b.waiting, color: Theme.amber)
+                    group(L10n.f("Done %d", b.done.count), b.done, color: Theme.done, done: true)
                     group(L10n.f("Working %d", b.working.count), b.working, color: Color.white.opacity(0.62))
                     group(L10n.f("Idle %d", b.idle.count), b.idle, color: Theme.dim)
                 }
@@ -35,11 +36,11 @@ struct TaskList: View {
     }
 
     @ViewBuilder
-    private func group(_ title: String, _ list: [AgentSession], color: Color) -> some View {
+    private func group(_ title: String, _ list: [AgentSession], color: Color, done: Bool = false) -> some View {
         if !list.isEmpty {
             Text(title).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(color)
                 .padding(.top, 4).padding(.leading, 2)
-            ForEach(list) { TaskRow(session: $0, sessions: sessions, actions: actions) }
+            ForEach(list) { TaskRow(session: $0, sessions: sessions, actions: actions, done: done) }
         }
     }
 }
@@ -54,6 +55,7 @@ struct TaskRow: View {
     let session: AgentSession
     @ObservedObject var sessions: SessionStore
     weak var actions: AppActions?
+    var done = false
     @State private var hovered = false
 
     var body: some View {
@@ -70,7 +72,7 @@ struct TaskRow: View {
                             .font(.system(size: 13, weight: waiting ? .semibold : .medium))
                             .foregroundStyle(Color.white.opacity(s.state == .idle ? 0.6 : 0.95))
                         Spacer(minLength: 8)
-                        badge(s)
+                        SessionBadge(session: s, done: done)
                     }
                     HStack(spacing: 8) {
                         Text(doing(s))
@@ -90,22 +92,6 @@ struct TaskRow: View {
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
         .help([s.cwd, s.promptPreview].compactMap { $0 }.joined(separator: "\n"))
-    }
-
-    @ViewBuilder
-    private func badge(_ s: AgentSession) -> some View {
-        switch s.state {
-        case .waitingPermission, .waitingInput:
-            Text(SessionText.waitStatus(s))
-                .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Color(red: 0.10, green: 0.07, blue: 0.02))
-                .padding(.horizontal, 8).padding(.vertical, 2)
-                .background(Capsule().fill(Theme.amber))
-        case .working:
-            Text(L10n.t("working")).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Theme.accent(s.provider))
-        case .idle, .ended:
-            Text(L10n.t("idle") + " " + Formatting.countdown(Date().timeIntervalSince(s.stateSince)))
-                .font(.system(size: 10.5)).foregroundStyle(Theme.dim)
-        }
     }
 
     /// What it is doing (or asking) right now, in one line.
@@ -130,6 +116,38 @@ struct TaskRow: View {
             parts.append(L10n.f("context %d%%", Int((ContextGauge.fraction(tokens: tokens) * 100).rounded())))
         }
         return parts.joined(separator: " · ")
+    }
+}
+
+/// The state pill at the end of a session's first line.
+struct SessionBadge: View {
+    let session: AgentSession
+    /// Finished a task you have not looked at yet (a board placement, not a hook state).
+    var done = false
+
+    var body: some View {
+        let s = session
+        if done {
+            pill(L10n.t("done · unseen") + " · " + SessionText.ago(s.stateSince), fill: Theme.done)
+        } else {
+            switch s.state {
+            case .waitingPermission, .waitingInput:
+                pill(SessionText.waitStatus(s), fill: Theme.amber)
+            case .working:
+                Text(L10n.t("working")).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Theme.accent(s.provider))
+            case .idle, .ended:
+                Text(L10n.t("idle") + " " + Formatting.countdown(Date().timeIntervalSince(s.stateSince)))
+                    .font(.system(size: 10.5)).foregroundStyle(Theme.dim)
+            }
+        }
+    }
+
+    private func pill(_ text: String, fill: Color) -> some View {
+        Text(text)
+            .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Color(red: 0.10, green: 0.07, blue: 0.02))
+            .padding(.horizontal, 8).padding(.vertical, 2)
+            .background(Capsule().fill(fill))
+            .fixedSize()
     }
 }
 

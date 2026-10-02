@@ -13,8 +13,12 @@ final class NotchViewModel: ObservableObject {
     /// and the open panel simply hangs from the screen edge with square top corners.
     let openEar: CGFloat = 0
     var ear: CGFloat { isOpen ? openEar : 0 }
-    /// How far the closed shape hangs below the notch: just enough for the halo.
-    let closedDrop: CGFloat = 6
+    /// Sessions waiting on you / finished and unseen; shown under the closed notch so you need not hover to find out.
+    @Published var waitingCount = 0
+    @Published var doneCount = 0
+    var needsAttention: Bool { waitingCount + doneCount > 0 }
+    /// How far the closed shape hangs below the notch: just enough for the halo, or for a line of status when something needs you.
+    var closedDrop: CGFloat { needsAttention ? 24 : 6 }
     /// Invisible margin around the notch that also triggers the hover.
     let hoverMargin: CGFloat = 20
     /// The horizon layout needs a much wider panel than the list.
@@ -41,6 +45,11 @@ final class NotchController {
     private var cancellables: Set<AnyCancellable> = []
 
     init(store: UsageStore, sessions: SessionStore, settings: SettingsStore, actions: AppActions) {
+        sessions.$board.sink { [weak self] b in
+            guard let model = self?.model else { return }
+            if model.waitingCount != b.waiting.count { model.waitingCount = b.waiting.count }
+            if model.doneCount != b.done.count { model.doneCount = b.done.count }
+        }.store(in: &cancellables)
         let root = NotchRootView(model: model, store: store, sessions: sessions, settings: settings, actions: actions)
         let host = NSHostingView(rootView: root)
         host.wantsLayer = true
