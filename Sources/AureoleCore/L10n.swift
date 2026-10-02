@@ -75,6 +75,9 @@ public enum L10n {
         "Usage from the status line": "从状态栏读取额度", "On": "已开启", "Install": "安装", "Remove": "移除",
         "Claude Code hands its status line the 5-hour and weekly numbers and each session's exact context use. Aureole reads them there, so it asks the usage endpoint far less often. A status line you already have keeps working and is restored on removal.":
             "Claude Code 会把 5 小时、本周额度和每个会话的准确上下文占用交给状态栏。Aureole 从那里读取，就能少调用额度接口。你原有的状态栏照常显示，移除时原样恢复。",
+        "quiet %@": "%@无动静", "context %d%% · nearly full": "上下文 %d%% · 快满了",
+        "No events for a while. A long build or test is normal; otherwise take a look.": "有一阵没有动静了。如果在跑长时间的编译或测试是正常的，否则去看一眼。",
+        "Claude Code will compact the conversation soon.": "Claude Code 快要自动压缩上下文了。",
         "working": "干活中", "Last: %@": "上次：%@", "Panel layout": "面板样式", "Horizon": "晨昏线", "List": "列表", "Session tracking is off.": "会话跟踪已关闭。",
         "Context %% is an estimate (200k or 1M window).": "上下文百分比是估算（按 20 万或 100 万窗口）。",
         "Jump to terminal": "跳到终端", "Requesting": "正在请求", "Last": "最近", "Prompt": "提示词", "Folder": "目录",

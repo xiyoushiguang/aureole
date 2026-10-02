@@ -79,7 +79,7 @@ struct TaskRow: View {
                             .font(waiting ? .system(size: 11, design: .monospaced) : .system(size: 11))
                             .foregroundStyle(waiting ? Theme.amber.opacity(0.9) : Theme.dim)
                         Spacer(minLength: 8)
-                        Text(meta(s)).font(.system(size: 10.5).monospacedDigit()).foregroundStyle(Theme.dim)
+                        SessionMeta(session: s, context: sessions.contextFraction(s.id))
                     }
                 }
                 .lineLimit(1)
@@ -107,15 +107,36 @@ struct TaskRow: View {
         }
     }
 
-    /// "Codex · 38m · context 41%"
-    private func meta(_ s: AgentSession) -> String {
-        var parts: [String] = []
-        if s.provider == .codex { parts.append("Codex") }
-        parts.append(Formatting.countdown(Date().timeIntervalSince(s.startedAt)))
-        if let f = sessions.contextFraction(s.id) {
-            parts.append(L10n.f("context %d%%", Int((f * 100).rounded())))
+}
+
+/// "Codex · 38m · context 41%", with a long quiet spell or a nearly full context called out in amber.
+struct SessionMeta: View {
+    let session: AgentSession
+    /// Context used, 0...1.
+    let context: Double?
+
+    var body: some View {
+        let s = session
+        let now = Date()
+        let quiet = SessionHealth.silence(s, now: now)
+        let full = (context ?? 0) >= SessionHealth.contextNearlyFull
+        let base = (s.provider == .codex ? ["Codex"] : []) + [Formatting.countdown(now.timeIntervalSince(s.startedAt))]
+        HStack(spacing: 0) {
+            Text(base.joined(separator: " · ")).foregroundStyle(Theme.dim)
+            if let c = context {
+                let pct = Int((c * 100).rounded())
+                Text(" · " + (full ? L10n.f("context %d%% · nearly full", pct) : L10n.f("context %d%%", pct)))
+                    .foregroundStyle(full ? Theme.amber : Theme.dim)
+            }
+            if let q = quiet {
+                Text(" · " + L10n.f("quiet %@", Formatting.countdown(q))).foregroundStyle(Theme.amber)
+            }
         }
-        return parts.joined(separator: " · ")
+        .font(.system(size: 10.5).monospacedDigit())
+        .lineLimit(1)
+        .fixedSize()
+        .help([quiet != nil ? L10n.t("No events for a while. A long build or test is normal; otherwise take a look.") : nil,
+               full ? L10n.t("Claude Code will compact the conversation soon.") : nil].compactMap { $0 }.joined(separator: "\n"))
     }
 }
 
@@ -177,13 +198,6 @@ enum SessionText {
         }
     }
 
-    /// "Claude Code · 38m · context 489k"
-    static func meta(_ s: AgentSession, context: Int? = nil, now: Date = Date()) -> String {
-        let agent = s.provider == .claude ? "Claude Code" : "Codex"
-        var parts = [agent, Formatting.countdown(now.timeIntervalSince(s.startedAt))]
-        if let context { parts.append(L10n.f("context %@", TranscriptReader.short(context))) }
-        return parts.joined(separator: " · ")
-    }
 
     /// "4m ago"
     static func ago(_ date: Date, now: Date = Date()) -> String {

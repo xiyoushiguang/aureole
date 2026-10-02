@@ -428,6 +428,21 @@ public enum TranscriptReader {
     }
 }
 
+/// Signs a session may need a look, shown on its lane rather than announced: a long build is silent too.
+public enum SessionHealth {
+    /// A working session with no hook event for this long is mentioned.
+    public static let silentAfter: TimeInterval = 10 * 60
+    /// Context use past this fraction means Claude Code will soon compact the conversation.
+    public static let contextNearlyFull = 0.85
+
+    /// How long a working session has gone without any event, once that is long enough to mention.
+    public static func silence(_ s: AgentSession, now: Date) -> TimeInterval? {
+        guard s.state == .working else { return nil }
+        let quiet = now.timeIntervalSince(s.updatedAt)
+        return quiet >= silentAfter ? quiet : nil
+    }
+}
+
 /// Decides when a session is worth a notification: waiting on you for a while, or done with a task.
 /// Each wait and each finish is announced once; `sent` remembers which.
 public struct SessionAlerts: Sendable {

@@ -195,4 +195,12 @@ final class SessionTests: XCTestCase {
         board = SessionBoard.build([waiting, done], now: t0 + 3600, alive: { _ in true })
         XCTAssertEqual(quiet.check(board, now: t0 + 3600, name: \.projectName), [])
     }
+
+    func testSilenceIsOnlyMentionedForLongQuietWork() {
+        let s = SessionReducer.apply(event("PreToolUse", ["tool_name": "Bash"]), to: nil, now: t0)
+        XCTAssertNil(SessionHealth.silence(s, now: t0 + 300))
+        XCTAssertEqual(SessionHealth.silence(s, now: t0 + 720), 720)
+        let idle = SessionReducer.apply(event("Stop"), to: s, now: t0 + 10)
+        XCTAssertNil(SessionHealth.silence(idle, now: t0 + 3600))   // idle is not stuck
+    }
 }

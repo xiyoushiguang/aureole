@@ -436,7 +436,7 @@ struct LaneRow: View {
                             .font(waiting ? .system(size: 11, design: .monospaced) : .system(size: 11))
                             .foregroundStyle(waiting ? Theme.amber.opacity(0.9) : Theme.dim)
                         Spacer(minLength: 8)
-                        Text(meta(s, context: fraction)).font(.system(size: 10.5).monospacedDigit()).foregroundStyle(Theme.dim)
+                        SessionMeta(session: s, context: fraction)
                     }
                 }
                 .lineLimit(1)
@@ -461,14 +461,6 @@ struct LaneRow: View {
         }
     }
 
-    /// "Codex · 38m · context 41%"
-    private func meta(_ s: AgentSession, context: Double?) -> String {
-        var parts: [String] = []
-        if s.provider == .codex { parts.append("Codex") }
-        parts.append(Formatting.countdown(Date().timeIntervalSince(s.startedAt)))
-        if let context { parts.append(L10n.f("context %d%%", Int((context * 100).rounded()))) }
-        return parts.joined(separator: " · ")
-    }
 }
 
 /// One session's light: a context ring around a coloured core, an amber halo when it needs you.
