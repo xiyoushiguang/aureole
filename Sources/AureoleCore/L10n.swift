@@ -92,6 +92,8 @@ public enum L10n {
         "Connected · %@ used %d%%": "已连接 · %@已用 %d%%", "Sign in with `%@` in a terminal, then retry.": "在终端里运行 `%@` 登录，然后点重试。",
         "macOS will ask once whether Aureole may read the Claude Code Keychain item: choose Always Allow.": "macOS 会问一次能否读取 Claude Code 的钥匙串项目，请选「始终允许」。",
         "Open the welcome guide…": "打开欢迎向导…",
+        "Codex hooks": "Codex hooks", "Track Codex sessions": "跟踪 Codex 会话",
+        "Adds the same helper to ~/.codex/hooks.json. Codex asks you to trust it once: the desktop app prompts at startup; in the CLI, run /hooks.": "在 ~/.codex/hooks.json 里登记同一个小程序。Codex 会要你信任一次：桌面版启动时会弹提示，命令行里运行 /hooks。",
         "working": "干活中", "Last: %@": "上次：%@", "Panel layout": "面板样式", "Horizon": "晨昏线", "List": "列表", "Session tracking is off.": "会话跟踪已关闭。",
         "Context %% is an estimate (200k or 1M window).": "上下文百分比是估算（按 20 万或 100 万窗口）。",
         "Jump to terminal": "跳到终端", "Requesting": "正在请求", "Last": "最近", "Prompt": "提示词", "Folder": "目录",

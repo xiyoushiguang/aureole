@@ -13,6 +13,7 @@ final class SessionStore: ObservableObject {
     @Published private(set) var titles: [String: String] = [:]
     @Published private(set) var hookStatus: HookInstaller.Status = .notInstalled
     @Published private(set) var statuslineInstalled = false
+    @Published private(set) var codexHookStatus: HookInstaller.Status = .notInstalled
     /// Context used (0...1) per session as Claude Code's status line reports it; exact, unlike the token estimate.
     @Published private(set) var contextReported: [String: Double] = [:]
     @Published private(set) var lastError: String?
@@ -177,6 +178,30 @@ final class SessionStore: ObservableObject {
         let current = try? HookInstaller.read()
         hookStatus = current.map { HookInstaller.status(settings: $0) } ?? .notInstalled
         statuslineInstalled = current.map { StatuslineInstaller.isInstalled(settings: $0) } ?? false
+        codexHookStatus = (try? HookInstaller.read(url: HookInstaller.codexHooksURL))
+            .map { HookInstaller.status(settings: $0, events: HookInstaller.codexEvents) } ?? .notInstalled
+    }
+
+    /// Registers the helper in ~/.codex/hooks.json (same shape as Claude Code's hooks). Codex then asks the
+    /// user to trust it once: the desktop app prompts at startup, the CLI has /hooks.
+    func installCodexHooks() { setCodexHooks(installed: true) }
+    func uninstallCodexHooks() { setCodexHooks(installed: false) }
+
+    private func setCodexHooks(installed: Bool) {
+        do {
+            installHelperIfNeeded()
+            let url = HookInstaller.codexHooksURL
+            let current = try HookInstaller.read(url: url)
+            let merged = HookInstaller.merge(settings: current, helperPath: Self.helperURL.path, install: installed,
+                                             events: HookInstaller.codexEvents, arguments: " " + HookInstaller.codexFlag)
+            try HookInstaller.write(merged, url: url)
+            lastError = nil
+            AureoleLog.shared.log(installed ? "Codex hooks installed" : "Codex hooks removed")
+        } catch {
+            lastError = error.localizedDescription
+            AureoleLog.shared.log("Codex hook install failed: \(error.localizedDescription)")
+        }
+        refreshHookStatus()
     }
 
     /// How full a session's context is: what the status line reported, else an estimate from the token count.

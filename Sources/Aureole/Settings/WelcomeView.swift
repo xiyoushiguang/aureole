@@ -42,6 +42,10 @@ struct WelcomeView: View {
                      detail: L10n.t("Adds a small helper to ~/.claude/settings.json so each session's state shows up. Your other hooks are kept."),
                      button: sessions.hookStatus == .notInstalled ? StepAction(label: L10n.t("Install hooks"), run: { sessions.installHooks() }) : nil)
                 Divider()
+                step(done: sessions.codexHookStatus != .notInstalled, optional: true, title: L10n.t("Track Codex sessions"),
+                     detail: L10n.t("Adds the same helper to ~/.codex/hooks.json. Codex asks you to trust it once: the desktop app prompts at startup; in the CLI, run /hooks."),
+                     button: sessions.codexHookStatus == .notInstalled ? StepAction(label: L10n.t("Install hooks"), run: { sessions.installCodexHooks() }) : nil)
+                Divider()
                 step(done: sessions.statuslineInstalled, optional: true, title: L10n.t("Usage from the status line"),
                      detail: L10n.t("Fresher numbers, exact context use, far fewer calls to the usage endpoint. Keeps any status line you already have."),
                      button: sessions.statuslineInstalled ? nil : StepAction(label: L10n.t("Install"), run: { sessions.installStatusline() }))

@@ -203,4 +203,25 @@ final class SessionTests: XCTestCase {
         let idle = SessionReducer.apply(event("Stop"), to: s, now: t0 + 10)
         XCTAssertNil(SessionHealth.silence(idle, now: t0 + 3600))   // idle is not stuck
     }
+
+    func testCodexHooksUseTheirOwnEventsAndFlag() {
+        let merged = HookInstaller.merge(settings: [:], helperPath: "/h/aureole-hook", install: true,
+                                         events: HookInstaller.codexEvents, arguments: " --codex")
+        let hooks = merged["hooks"] as! [String: Any]
+        XCTAssertNil(hooks["Notification"])
+        let cmd = (((hooks["PermissionRequest"] as! [[String: Any]])[0]["hooks"] as! [[String: Any]])[0]["command"] as! String)
+        XCTAssertEqual(cmd, "/h/aureole-hook --codex")
+        XCTAssertEqual(HookInstaller.status(settings: merged, events: HookInstaller.codexEvents), .installed(events: 7))
+        let removed = HookInstaller.merge(settings: merged, helperPath: "/h/aureole-hook", install: false, events: HookInstaller.codexEvents)
+        XCTAssertNil(removed["hooks"])
+        let s = SessionReducer.apply(event("PermissionRequest", ["tool_name": "shell"]), to: nil, now: t0, provider: .codex)
+        XCTAssertEqual(s.provider, .codex)
+        XCTAssertEqual(s.state, .waitingPermission)
+    }
+
+    func testCodexShellDetail() {
+        XCTAssertEqual(SessionReducer.detail(tool: "shell", input: ["command": ["bash", "-lc", "npm test"]]), "npm test")
+        XCTAssertEqual(SessionReducer.detail(tool: "shell", input: ["command": ["ls", "-la"]]), "ls -la")
+        XCTAssertEqual(SessionReducer.detail(tool: "shell", input: ["command": "make", "description": "Build it"]), "Build it")
+    }
 }

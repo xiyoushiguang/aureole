@@ -129,8 +129,9 @@ public struct HookEvent {
 
 /// Pure state machine: folds one hook event into a session record.
 public enum SessionReducer {
-    public static func apply(_ e: HookEvent, to existing: AgentSession?, now: Date, keepPrompt: Bool = true) -> AgentSession {
-        var s = existing ?? AgentSession(provider: .claude, sessionId: e.sessionId, cwd: e.cwd, now: now)
+    public static func apply(_ e: HookEvent, to existing: AgentSession?, now: Date, keepPrompt: Bool = true,
+                             provider: ProviderID = .claude) -> AgentSession {
+        var s = existing ?? AgentSession(provider: provider, sessionId: e.sessionId, cwd: e.cwd, now: now)
         if !e.cwd.isEmpty { s.cwd = e.cwd }
         if let t = e.transcriptPath { s.transcriptPath = t }
         s.updatedAt = now
@@ -203,6 +204,15 @@ public enum SessionReducer {
         func base(_ k: String) -> String? { str(k).map { ($0 as NSString).lastPathComponent } }
         switch tool {
         case "Bash": return str("description").map { oneLine($0, max: 60) } ?? str("command").map { oneLine($0, max: 60) }
+        case "shell", "local_shell", "exec_command", "container.exec":
+            // Codex: the command is a string or an argv array, sometimes with a description.
+            if let d = str("description") { return oneLine(d, max: 60) }
+            if let argv = i["command"] as? [String] {
+                let cmd = argv.count >= 3 && ["bash", "zsh", "sh"].contains((argv[0] as NSString).lastPathComponent) && argv[1] == "-lc"
+                    ? argv[2] : argv.joined(separator: " ")
+                return oneLine(cmd, max: 60)
+            }
+            return str("command").map { oneLine($0, max: 60) }
         case "Edit", "Write", "Read", "MultiEdit", "NotebookEdit": return base("file_path") ?? base("notebook_path")
         case "Grep", "Glob": return str("pattern")
         case "Agent", "Task": return str("description")
@@ -300,19 +310,29 @@ public enum SessionFiles {
     }
 }
 
-/// Installs the hook helper into ~/.claude/settings.json without disturbing anything else in it.
+/// Installs the hook helper into ~/.claude/settings.json (or Codex's ~/.codex/hooks.json, which has the same
+/// shape) without disturbing anything else in it.
 public enum HookInstaller {
     public static let events = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest",
                                 "Notification", "Stop", "SessionEnd"]
+    /// Codex has no Notification event; its approvals arrive as PermissionRequest.
+    public static let codexEvents = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest",
+                                     "Stop", "SessionEnd"]
     public static let marker = "aureole-hook"
+    /// Argument that tells the helper it is running for Codex.
+    public static let codexFlag = "--codex"
 
     public static var settingsURL: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/settings.json")
     }
 
+    public static var codexHooksURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/hooks.json")
+    }
+
     public enum Status: Equatable, Sendable { case installed(events: Int), partial(events: Int), notInstalled }
 
-    public static func status(settings: [String: Any]) -> Status {
+    public static func status(settings: [String: Any], events: [String] = events) -> Status {
         let hooks = settings["hooks"] as? [String: Any] ?? [:]
         let n = events.filter { contains(hooks[$0]) }.count
         if n == 0 { return .notInstalled }
@@ -327,7 +347,8 @@ public enum HookInstaller {
     }
 
     /// Returns the settings with our hook added to every event (idempotent) or removed from all of them.
-    public static func merge(settings: [String: Any], helperPath: String, install: Bool) -> [String: Any] {
+    public static func merge(settings: [String: Any], helperPath: String, install: Bool,
+                             events: [String] = events, arguments: String = "") -> [String: Any] {
         var out = settings
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
         for event in events {
@@ -341,7 +362,7 @@ public enum HookInstaller {
                 return e
             }
             if install {
-                list.append(["hooks": [["type": "command", "command": quoted(helperPath), "timeout": 5]]])
+                list.append(["hooks": [["type": "command", "command": quoted(helperPath) + arguments, "timeout": 5]]])
             }
             if list.isEmpty { hooks[event] = nil } else { hooks[event] = list }
         }

@@ -21,8 +21,9 @@ func main() {
 
     let now = Date()
     let keepPrompt = UserDefaults(suiteName: "app.aureole.Aureole")?.object(forKey: "sessionPromptPreview") as? Bool ?? true
+    let provider: ProviderID = args.contains(HookInstaller.codexFlag) ? .codex : .claude
     let url = SessionFiles.url(for: event.sessionId)
-    var session = SessionReducer.apply(event, to: SessionFiles.load(url), now: now, keepPrompt: keepPrompt)
+    var session = SessionReducer.apply(event, to: SessionFiles.load(url), now: now, keepPrompt: keepPrompt, provider: provider)
     if session.agentPid == nil || session.tty == nil || event.name == "SessionStart" {
         fillProcessInfo(&session)
     }
@@ -60,13 +61,13 @@ func fillProcessInfo(_ s: inout AgentSession) {
     s.termSessionId = env["ITERM_SESSION_ID"] ?? env["TERM_SESSION_ID"]
     s.bundleId = env["__CFBundleIdentifier"]
     s.tmuxPane = env["TMUX_PANE"]
-    // Walk up from our parent; the CLI shows up as "claude" (the installed binary) or "node".
+    // Walk up from our parent; the CLI shows up as "claude" (the installed binary), "node" or "codex".
     var pid = getppid()
     var agent: pid_t = pid
     for _ in 0..<6 {
         guard let info = processInfo(pid) else { break }
         let name = info.name.lowercased()
-        if name == "claude" || name == "node" || name.hasPrefix("claude") {
+        if name == "claude" || name == "node" || name.hasPrefix("claude") || name.hasPrefix("codex") {
             agent = pid
             break
         }

@@ -117,6 +117,18 @@ struct SessionsTab: View {
                         }
                     }
                 }
+                LabeledContent(L10n.t("Codex hooks")) {
+                    HStack(spacing: 10) {
+                        Text(L10n.t(sessions.codexHookStatus == .notInstalled ? "Not installed" : "On")).foregroundStyle(.secondary)
+                        if sessions.codexHookStatus == .notInstalled {
+                            Button(L10n.t("Install")) { sessions.installCodexHooks() }
+                        } else {
+                            Button(L10n.t("Remove")) { sessions.uninstallCodexHooks() }
+                        }
+                    }
+                }
+                Text(L10n.t("Adds the same helper to ~/.codex/hooks.json. Codex asks you to trust it once: the desktop app prompts at startup; in the CLI, run /hooks."))
+                    .font(.caption).foregroundStyle(.secondary)
                 LabeledContent(L10n.t("Usage from the status line")) {
                     HStack(spacing: 10) {
                         Text(L10n.t(sessions.statuslineInstalled ? "On" : "Not installed")).foregroundStyle(.secondary)
