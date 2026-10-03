@@ -16,11 +16,22 @@ OUT_DIR="$WORK/stage" scripts/build-app.sh release
 APP="$WORK/stage/Aureole.app"
 codesign --verify --deep --strict "$APP"
 
-notarize() {   # notarize <file>: submit, wait, fail loudly on rejection
-    local out
-    out="$(xcrun notarytool submit "$1" --keychain-profile "$NOTARY_PROFILE" --wait 2>&1)" || { echo "$out"; exit 1; }
-    echo "$out" | tail -3
-    echo "$out" | grep -q "status: Accepted" || { echo "Notarization was not accepted for $1"; exit 1; }
+notarize() {   # notarize <file>: submit, then poll; a flaky network while waiting is retried, not fatal
+    local out id status tries=0
+    out="$(xcrun notarytool submit "$1" --keychain-profile "$NOTARY_PROFILE" --output-format json 2>&1)" || { echo "$out"; exit 1; }
+    id="$(echo "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')" || { echo "$out"; exit 1; }
+    echo "submitted $1 as $id"
+    while :; do
+        status="$(xcrun notarytool info "$id" --keychain-profile "$NOTARY_PROFILE" --output-format json 2>/dev/null \
+                  | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])' 2>/dev/null)" || status=""
+        case "$status" in
+            Accepted) echo "notarized: $1"; return 0 ;;
+            Invalid|Rejected)
+                echo "Notarization $status for $1:"; xcrun notarytool log "$id" --keychain-profile "$NOTARY_PROFILE"; exit 1 ;;
+            *) tries=$((tries + 1)); [ "$tries" -gt 240 ] && { echo "gave up waiting on $id (check: xcrun notarytool info $id)"; exit 1; }
+               sleep 30 ;;
+        esac
+    done
 }
 NOTARIZE=0
 if [ -n "${CODESIGN_IDENTITY:-}" ] && [ -n "${NOTARY_PROFILE:-}" ]; then
