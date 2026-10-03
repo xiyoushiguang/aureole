@@ -21,14 +21,22 @@ notarize() {   # notarize <file>: submit, then poll; a flaky network while waiti
     out="$(xcrun notarytool submit "$1" --keychain-profile "$NOTARY_PROFILE" --output-format json 2>&1)" || { echo "$out"; exit 1; }
     id="$(echo "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')" || { echo "$out"; exit 1; }
     echo "submitted $1 as $id"
+    local fails=0 err
     while :; do
-        status="$(xcrun notarytool info "$id" --keychain-profile "$NOTARY_PROFILE" --output-format json 2>/dev/null \
-                  | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])' 2>/dev/null)" || status=""
+        err="$(xcrun notarytool info "$id" --keychain-profile "$NOTARY_PROFILE" --output-format json 2>&1)" \
+            && status="$(echo "$err" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])' 2>/dev/null)" \
+            || status=""
         case "$status" in
             Accepted) echo "notarized: $1"; return 0 ;;
             Invalid|Rejected)
                 echo "Notarization $status for $1:"; xcrun notarytool log "$id" --keychain-profile "$NOTARY_PROFILE"; exit 1 ;;
-            *) tries=$((tries + 1)); [ "$tries" -gt 240 ] && { echo "gave up waiting on $id (check: xcrun notarytool info $id)"; exit 1; }
+            "") fails=$((fails + 1))
+                # A dropped connection is worth retrying; a missing credential is not.
+                if echo "$err" | grep -q "No Keychain password item"; then echo "$err"; exit 1; fi
+                [ "$fails" -ge 10 ] && { echo "notarytool keeps failing:"; echo "$err"; exit 1; }
+                sleep 30 ;;
+            *) fails=0; tries=$((tries + 1))
+               [ "$tries" -gt 240 ] && { echo "gave up waiting on $id (check: xcrun notarytool info $id)"; exit 1; }
                sleep 30 ;;
         esac
     done
