@@ -89,7 +89,7 @@ func fillProcessInfo(_ s: inout AgentSession) {
     var pid = getppid()
     var agent: pid_t = pid
     for _ in 0..<6 {
-        guard let info = processInfo(pid) else { break }
+        guard let info = ProcessTree.info(pid) else { break }
         let name = info.name.lowercased()
         if name == "claude" || name == "node" || name.hasPrefix("claude") || name.hasPrefix("codex") {
             agent = pid
@@ -99,44 +99,11 @@ func fillProcessInfo(_ s: inout AgentSession) {
         pid = info.ppid
     }
     s.agentPid = agent
-    // Not launched from a terminal (e.g. Codex inside the ChatGPT desktop app): remember the app that owns the
-    // agent, so a click can at least bring it forward.
-    if s.bundleId == nil { s.bundleId = owningAppBundleId(of: agent) }
+    // Not launched from a terminal (e.g. Codex inside the ChatGPT desktop app): remember the app at the root
+    // of the process tree, so a click can at least bring it forward.
+    if s.bundleId == nil { s.bundleId = ProcessTree.rootAppBundleId(of: agent) }
     // Hooks run detached from the terminal, so ask the agent process which tty it sits on.
-    s.tty = controllingTTY(of: agent) ?? controllingTTY(of: getpid())
-}
-
-/// The bundle id of the outermost .app that contains a process's executable, if any.
-func owningAppBundleId(of pid: pid_t) -> String? {
-    var buf = [CChar](repeating: 0, count: 4096)
-    guard proc_pidpath(pid, &buf, UInt32(buf.count)) > 0 else { return nil }
-    let path = String(cString: buf)
-    guard let r = path.range(of: ".app/") else { return nil }
-    return Bundle(path: String(path[..<r.lowerBound]) + ".app")?.bundleIdentifier
-}
-
-struct ProcInfo { var ppid: pid_t; var name: String }
-
-func processInfo(_ pid: pid_t) -> ProcInfo? {
-    var info = kinfo_proc()
-    var size = MemoryLayout<kinfo_proc>.stride
-    var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
-    guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return nil }
-    let name = withUnsafePointer(to: &info.kp_proc.p_comm) { ptr -> String in
-        ptr.withMemoryRebound(to: CChar.self, capacity: Int(MAXCOMLEN) + 1) { String(cString: $0) }
-    }
-    return ProcInfo(ppid: info.kp_eproc.e_ppid, name: name)
-}
-
-/// "ttys003" for the controlling terminal, or nil when there is none.
-func controllingTTY(of pid: pid_t) -> String? {
-    var info = kinfo_proc()
-    var size = MemoryLayout<kinfo_proc>.stride
-    var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
-    guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return nil }
-    let dev = info.kp_eproc.e_tdev
-    guard dev != 0, dev != -1, let name = devname(dev, S_IFCHR) else { return nil }
-    return String(cString: name)
+    s.tty = ProcessTree.controllingTTY(of: agent) ?? ProcessTree.controllingTTY(of: getpid())
 }
 
 main()

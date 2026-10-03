@@ -18,6 +18,7 @@ struct WelcomeView: View {
     let close: () -> Void
     @State private var notifications: UNAuthorizationStatus = .notDetermined
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @ObservedObject private var scanner = AgentScanner.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -29,6 +30,7 @@ struct WelcomeView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            detected
             VStack(spacing: 0) {
                 step(done: providerOK(.claude), title: L10n.t("Claude usage"),
                      detail: providerDetail(.claude, signIn: "claude login"),
@@ -42,7 +44,8 @@ struct WelcomeView: View {
                      detail: L10n.t("Adds a small helper to ~/.claude/settings.json so each session's state shows up. Your other hooks are kept."),
                      button: sessions.hookStatus == .notInstalled ? StepAction(label: L10n.t("Install hooks"), run: { sessions.installHooks() }) : nil)
                 Divider()
-                step(done: sessions.codexHookStatus != .notInstalled, optional: true, title: L10n.t("Track Codex sessions"),
+                step(done: sessions.codexHookStatus != .notInstalled, optional: scanner.findings[.codex]?.installed != true,
+                     title: L10n.t("Track Codex sessions"),
                      detail: L10n.t("Adds the same helper to ~/.codex/hooks.json. Codex asks you to trust it once: the desktop app prompts at startup; in the CLI, run /hooks."),
                      button: sessions.codexHookStatus == .notInstalled ? StepAction(label: L10n.t("Install hooks"), run: { sessions.installCodexHooks() }) : nil)
                 Divider()
@@ -69,7 +72,60 @@ struct WelcomeView: View {
         }
         .padding(24)
         .frame(width: 560)
-        .task { await refreshNotificationStatus() }
+        .task {
+            if !scanner.scanned { scanner.scan() }
+            await refreshNotificationStatus()
+        }
+    }
+
+    /// What the scan found: each agent, and whether it runs in a terminal or a desktop app.
+    private var detected: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(L10n.t("Detected on this Mac")).font(.headline)
+                Spacer()
+                if scanner.scanning { ProgressView().controlSize(.small) }
+                Button(L10n.t("Scan again")) { scanner.scan() }.disabled(scanner.scanning)
+            }
+            ForEach([ProviderID.claude, .codex], id: \.self) { p in
+                if let f = scanner.findings[p] { finding(f) }
+            }
+            if scanner.scanned, !scanner.findings.values.contains(where: \.installed) {
+                Text(L10n.t("No Claude Code or Codex found. Install one, then scan again."))
+                    .font(.callout).foregroundStyle(.orange)
+            }
+            ForEach(scanner.terminalsNeedingSetup, id: \.self) { id in
+                Text(id == "net.kovidgoyal.kitty"
+                     ? L10n.t("kitty: to jump to a window, set allow_remote_control and listen_on in kitty.conf.")
+                     : L10n.t("Ghostty: tab jumps need Ghostty 1.3 or later; macOS asks once to let Aureole control it."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
+    }
+
+    private func finding(_ f: AgentFinding) -> some View {
+        let name = f.provider == .claude ? "Claude Code" : "Codex"
+        var places: [String] = []
+        if !f.runningIn.isEmpty {
+            places.append(L10n.f("running in %@", f.runningIn.map(AppNames.name).joined(separator: ", ")))
+        } else {
+            if f.cliPath != nil { places.append(L10n.t("command line")) }
+            places += f.desktopApps.map { L10n.f("%@ desktop app", AppNames.name($0)) }
+        }
+        var hints: [String] = []
+        if f.usesTerminal { hints.append(L10n.t("In a terminal: a click jumps to the session's tab.")) }
+        if f.usesDesktop { hints.append(L10n.t("In a desktop app: a click brings the app forward (it cannot open a specific conversation).")) }
+        return HStack(alignment: .top, spacing: 10) {
+            Image(systemName: f.installed ? "checkmark.circle.fill" : "minus.circle")
+                .foregroundStyle(f.installed ? .green : .secondary).font(.system(size: 15))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name + " · " + (f.installed ? places.joined(separator: " · ") : L10n.t("not found")))
+                    .font(.callout.weight(.medium))
+                ForEach(hints, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
+            }
+        }
     }
 
     @ViewBuilder

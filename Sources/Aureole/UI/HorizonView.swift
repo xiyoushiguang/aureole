@@ -605,7 +605,7 @@ struct SessionCard: View {
             }
             row(L10n.t("Folder"), (s.cwd as NSString).abbreviatingWithTildeInPath)
             Button { actions?.jump(to: s) } label: {
-                Text(L10n.t("Jump to terminal"))
+                Text(AppNames.jumpLabel(s))
                     .font(.system(size: 12, weight: .semibold)).foregroundStyle(.black)
                     .padding(.horizontal, 16).frame(height: 30)
                     .background(Capsule().fill(Color.white))
