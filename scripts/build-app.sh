@@ -29,6 +29,14 @@ cp "$BIN" "$APP/Contents/MacOS/Aureole"
 cp "$(dirname "$BIN")/aureole-hook" "$APP/Contents/MacOS/aureole-hook"
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD_NO/" Resources/Info.plist > "$APP/Contents/Info.plist"
 if [ -f Resources/AppIcon.icns ]; then cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"; fi
-# Ad-hoc signature by default. Set CODESIGN_IDENTITY to a Developer ID for notarized releases.
-codesign --force --sign "${CODESIGN_IDENTITY:--}" --identifier app.aureole.Aureole "$APP"
+# Ad-hoc signature by default. With CODESIGN_IDENTITY (a "Developer ID Application" identity) the bundle is
+# signed for notarization: hardened runtime, secure timestamp, the helper before the app that contains it.
+if [ -n "${CODESIGN_IDENTITY:-}" ]; then
+    codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" \
+        --identifier app.aureole.hook "$APP/Contents/MacOS/aureole-hook"
+    codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" \
+        --entitlements Resources/Aureole.entitlements --identifier app.aureole.Aureole "$APP"
+else
+    codesign --force --sign - --identifier app.aureole.Aureole "$APP"
+fi
 echo "Built $APP (v$VERSION build $BUILD_NO, $CONFIG)"
