@@ -369,7 +369,8 @@ public enum HookInstaller {
             }
             if install {
                 // PermissionRequest may wait for a click in the panel (at most a minute) when that is turned on.
-                let timeout = event == "PermissionRequest" ? 120 : 5
+                // SessionEnd: Codex allows at most 3 s there, and there is nothing slow to do anyway.
+                let timeout = event == "PermissionRequest" ? 120 : event == "SessionEnd" ? 3 : 5
                 list.append(["hooks": [["type": "command", "command": quoted(helperPath) + arguments, "timeout": timeout]]])
             }
             if list.isEmpty { hooks[event] = nil } else { hooks[event] = list }

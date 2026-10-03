@@ -212,17 +212,22 @@ public struct HorizonScene: Equatable, Sendable {
         lanes = Self.lanes(sessions, clock: clock)
     }
 
+    /// Degrees an hour label keeps from the wider "start" / "reset" labels (about 65 pt on the band layout).
+    static let minLabelGap: Double = 2.8
+
     static func ticks(clock: HorizonClock, windowStart: Date?, reset: Date?) -> [HorizonTick] {
         var out: [HorizonTick] = []
         if let s = windowStart { out.append(HorizonTick(kind: .windowStart, date: s, angle: clock.angle(s))) }
         if let r = reset, r <= clock.end { out.append(HorizonTick(kind: .reset, date: r, angle: clock.angle(r))) }
-        let labelled = out.map(\.date)
+        let labelled = out.map(\.angle)
         let cal = Calendar.current
         var t = cal.dateInterval(of: .hour, for: clock.start)?.end ?? clock.start
         while t <= clock.end {
-            // Keep hour marks clear of the start/reset labels.
-            if !labelled.contains(where: { abs($0.timeIntervalSince(t)) < 20 * 60 }) {
-                out.append(HorizonTick(kind: .hour, date: t, angle: clock.angle(t)))
+            // Keep hour marks clear of the start/reset labels. Measured on the arc, not in minutes: the
+            // future side squeezes or stretches with the time to reset.
+            let a = clock.angle(t)
+            if !labelled.contains(where: { abs($0 - a) < minLabelGap }) {
+                out.append(HorizonTick(kind: .hour, date: t, angle: a))
             }
             t = t.addingTimeInterval(3600)
         }

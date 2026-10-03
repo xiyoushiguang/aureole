@@ -294,8 +294,14 @@ struct HorizonCanvas: View {
 
         if scene.paceLine.count >= 2 {
             ctx.stroke(line(scene.paceLine), with: .color(.white.opacity(0.22)), style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
-            let mid = scene.paceLine[scene.paceLine.count / 2 + 1]
-            if mid.x > nowX + 60 { label(&ctx, L10n.t("Steady pace"), at: CGPoint(x: mid.x, y: mid.y + 8), anchor: .top) }
+            // Label it where nothing else is written: right of "now" and clear of the no-quota stretch.
+            let order = scene.paceLine.indices.sorted { abs($0 - scene.paceLine.count / 2) < abs($1 - scene.paceLine.count / 2) }
+            let spot = order.map { scene.paceLine[$0] }.first { p in
+                let a = atan2(p.x - c.x, c.y - p.y) * 180 / .pi
+                let inDry = scene.dryFrom.map { from in a > from - 3 && a < (scene.dryTo ?? from) + 3 } ?? false
+                return p.x > nowX + 60 && p.x < L.width - 60 && !inDry
+            }
+            if let p = spot { label(&ctx, L10n.t("Steady pace"), at: CGPoint(x: p.x, y: p.y + 8), anchor: .top) }
         }
 
         // Forecast.

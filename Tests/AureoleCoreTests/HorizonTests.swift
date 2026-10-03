@@ -121,4 +121,17 @@ final class HorizonTests: XCTestCase {
         XCTAssertEqual(ContextGauge.fraction(tokens: 489_000), 0.489)
         XCTAssertEqual(ContextGauge.fraction(tokens: 5_000_000), 1)
     }
+
+    func testHourLabelsKeepClearOfTheResetLabel() {
+        // Reset 4h50m away, at :20 past the hour; the hour mark 20 minutes earlier would sit under its label.
+        let cal = Calendar.current
+        let top = cal.dateInterval(of: .hour, for: now)!.start
+        let reset = top.addingTimeInterval(5 * 3600 + 20 * 60)
+        let clock = HorizonClock(layout: L, now: now, resetsAt: reset)
+        let ticks = HorizonScene.ticks(clock: clock, windowStart: nil, reset: reset <= clock.end ? reset : nil)
+        guard let r = ticks.first(where: { $0.kind == .reset }) else { return }
+        for t in ticks where t.kind == .hour {
+            XCTAssertGreaterThanOrEqual(abs(t.angle - r.angle), HorizonScene.minLabelGap)
+        }
+    }
 }
