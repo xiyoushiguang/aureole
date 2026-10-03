@@ -99,8 +99,20 @@ func fillProcessInfo(_ s: inout AgentSession) {
         pid = info.ppid
     }
     s.agentPid = agent
+    // Not launched from a terminal (e.g. Codex inside the ChatGPT desktop app): remember the app that owns the
+    // agent, so a click can at least bring it forward.
+    if s.bundleId == nil { s.bundleId = owningAppBundleId(of: agent) }
     // Hooks run detached from the terminal, so ask the agent process which tty it sits on.
     s.tty = controllingTTY(of: agent) ?? controllingTTY(of: getpid())
+}
+
+/// The bundle id of the outermost .app that contains a process's executable, if any.
+func owningAppBundleId(of pid: pid_t) -> String? {
+    var buf = [CChar](repeating: 0, count: 4096)
+    guard proc_pidpath(pid, &buf, UInt32(buf.count)) > 0 else { return nil }
+    let path = String(cString: buf)
+    guard let r = path.range(of: ".app/") else { return nil }
+    return Bundle(path: String(path[..<r.lowerBound]) + ".app")?.bundleIdentifier
 }
 
 struct ProcInfo { var ppid: pid_t; var name: String }
