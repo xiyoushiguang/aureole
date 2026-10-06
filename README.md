@@ -70,11 +70,9 @@ An app you build yourself is not quarantined, so it opens directly.
 
 Grab `Aureole-<version>.dmg` from the Releases page and drag Aureole to Applications.
 
-Release builds are ad-hoc signed for now, not notarized, so macOS blocks the first launch. On
-macOS 15 and later, right-click → Open no longer gets past this: open Aureole once, dismiss the
-warning, then go to **System Settings → Privacy & Security** and click **Open Anyway**. On macOS 14,
-right-click → Open still works. Signed and notarized releases (and a Homebrew tap) will follow once
-the developer certificate is in place.
+Releases from 0.4.0 on are signed with a Developer ID and notarized by Apple, so they open like any
+other app. (0.3.0 and earlier were not: if you still have one, macOS 15 needs **System Settings →
+Privacy & Security → Open Anyway** once.) A Homebrew tap may follow.
 
 ## How it reads your usage
 

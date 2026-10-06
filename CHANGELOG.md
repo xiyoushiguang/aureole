@@ -1,7 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — 2026-10-03
 
+- **Signed and notarized.** Releases are signed with a Developer ID and notarized by Apple: no more
+  Privacy & Security detour on first launch.
+- **Finds your agents.** The welcome guide scans for Claude Code and Codex (command line and desktop
+  apps) and for where each running session lives, a terminal or a desktop app, and says what a click
+  will do there. Sessions inside a desktop app (e.g. Codex) bring that app forward.
+- Horizon labels no longer overlap ("no quota here" vs. "steady pace", hour marks vs. the reset).
 - **Codex sessions.** Codex now has hooks; Settings → Sessions → Codex hooks registers the same helper
   in `~/.codex/hooks.json` (your `notify` setting is left alone). Codex asks you to trust it once.
 - **Approve from the panel** (opt-in, off by default). Hover a waiting session: the card shows the full
