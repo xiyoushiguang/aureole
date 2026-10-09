@@ -47,6 +47,8 @@ final class SettingsStore: ObservableObject {
     /// Seconds a permission request waits for a click in the panel before the terminal asks; 0 = off.
     /// Stored where the hook helper reads it.
     @Published var approveFromPanelSeconds: Int { didSet { defaults.set(approveFromPanelSeconds, forKey: ApprovalFiles.waitKey) } }
+    /// The slow breathing glow and flowing forecast. They make the window server redraw the panel continuously.
+    @Published var ambientMotion: Bool { didSet { defaults.set(ambientMotion, forKey: "ambientMotion") } }
     @Published var sessionsEnabled: Bool { didSet { defaults.set(sessionsEnabled, forKey: "sessionsEnabled") } }
     /// The hook helper reads this key too (via the app's defaults domain) to decide whether to keep a prompt excerpt.
     @Published var sessionPromptPreview: Bool { didSet { defaults.set(sessionPromptPreview, forKey: "sessionPromptPreview") } }
@@ -76,6 +78,7 @@ final class SettingsStore: ObservableObject {
         notifyDone = d.object(forKey: "notifyDone") as? Bool ?? true
         checkUpdates = d.object(forKey: "checkUpdates") as? Bool ?? true
         approveFromPanelSeconds = d.object(forKey: ApprovalFiles.waitKey) as? Int ?? 0
+        ambientMotion = d.object(forKey: "ambientMotion") as? Bool ?? true
         sessionsEnabled = d.object(forKey: "sessionsEnabled") as? Bool ?? true
         sessionPromptPreview = d.object(forKey: "sessionPromptPreview") as? Bool ?? true
         if let data = try? Data(contentsOf: channelsURL),

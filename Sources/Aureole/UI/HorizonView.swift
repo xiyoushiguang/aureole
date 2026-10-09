@@ -70,7 +70,8 @@ struct HorizonPanel: View {
     static let laneHeight: CGFloat = 52
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 20)) { ctx in
+        // Every few seconds, so the time axis creeps along instead of jumping.
+        TimelineView(.periodic(from: .now, by: 5)) { ctx in
             content(now: ctx.date)
         }
         .frame(width: width)
@@ -85,7 +86,9 @@ struct HorizonPanel: View {
         let s = width / scene.layout.width
         VStack(spacing: 0) {
             ZStack(alignment: .topLeading) {
-                HorizonCanvas(scene: scene)
+                HorizonArc(inputs: inputs, now: now, board: board, used: inputs.window?.usedPercent ?? 0,
+                           ambient: settings.ambientMotion && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+                    .animation(.easeInOut(duration: 0.9), value: inputs.window?.usedPercent)
                 HStack(alignment: .top, spacing: 16) {
                     // The waiting capsule sits under the conclusion, in the sky left of "now", which is otherwise empty.
                     VStack(alignment: .leading, spacing: 12) {
@@ -218,16 +221,130 @@ private struct LanesHeightKey: PreferenceKey {
 
 // MARK: - Arc
 
+/// The arc's layers, stacked. Animatable on the usage number, so a new reading slides the curve, the
+/// current point and the forecast up to their new place instead of jumping.
+struct HorizonArc: View, Animatable {
+    let inputs: HorizonInputs
+    let now: Date
+    let board: SessionBoard
+    var used: Double
+    /// Breathing glow and flowing forecast on; off for Reduce Motion or by choice.
+    var ambient = true
+
+    var animatableData: Double {
+        get { used }
+        set { used = newValue }
+    }
+
+    var body: some View {
+        let scene = HorizonScene(layout: .band, now: now, window: window(used), samples: inputs.samples,
+                                 prediction: inputs.prediction, sessions: board)
+        ZStack {
+            HorizonCanvas(scene: scene, layer: .sky)
+            // The lit stretch breathes slowly: usage is being spent. The blurred glow is rendered once into a
+            // bitmap and only that bitmap's opacity animates; animating the Canvas itself redrew the blur every
+            // frame (a quarter of a CPU core while the panel was open).
+            GeometryReader { geo in
+                let k = geo.size.width / scene.layout.width
+                let box = glowBox(scene)
+                if let image = glowImage(scene, size: geo.size, crop: box) {
+                    Group {
+                        if ambient { BreathingImage(image: image) } else { Image(nsImage: image).resizable() }
+                    }
+                    .frame(width: box.width * k, height: box.height * k)
+                    .position(x: box.midX * k, y: box.midY * k)
+                }
+            }
+            HorizonCanvas(scene: scene, layer: .main)
+            if !ambient, let (from, to) = scene.forecast {
+                // Still: the same dashes, not moving.
+                GeometryReader { geo in
+                    let k = geo.size.width / scene.layout.width
+                    Path { p in p.move(to: CGPoint(x: from.x * k, y: from.y * k)); p.addLine(to: CGPoint(x: to.x * k, y: to.y * k)) }
+                        .stroke(Theme.amber, style: StrokeStyle(lineWidth: 2 * k, dash: [5 * k, 5 * k]))
+                }
+            }
+            // The forecast flows toward where it ends, a trend rather than a fixed line.
+            if ambient, let (from, to) = scene.forecast {
+                GeometryReader { geo in
+                    let k = geo.size.width / scene.layout.width
+                    FlowingDashes(points: [CGPoint(x: from.x * k, y: from.y * k), CGPoint(x: to.x * k, y: to.y * k)],
+                                  color: NSColor(Theme.amber), lineWidth: 2 * k, dash: 5 * k)
+                }
+                .allowsHitTesting(false)
+            }
+        }
+    }
+
+    /// Where the glow is, in canvas units: the lit stretch and the sun, plus room for the blur.
+    private func glowBox(_ scene: HorizonScene) -> CGRect {
+        let L = scene.layout
+        let pts = L.arc(from: scene.litFrom, to: scene.nowAngle, r: L.horizon, step: 1) + [scene.sun]
+        let xs = pts.map(\.x), ys = pts.map(\.y)
+        let margin: CGFloat = 70    // half the 40-wide stroke plus three times the 16-point blur
+        return CGRect(x: xs.min()! - margin, y: ys.min()! - margin,
+                      width: xs.max()! - xs.min()! + 2 * margin, height: ys.max()! - ys.min()! + 2 * margin)
+            .intersection(CGRect(x: 0, y: 0, width: L.width, height: L.height))
+    }
+
+    /// The glow layer rendered once into a bitmap, cropped to `crop` (canvas units).
+    @MainActor
+    private func glowImage(_ scene: HorizonScene, size: CGSize, crop: CGRect) -> NSImage? {
+        guard size.width > 0, !crop.isEmpty else { return nil }
+        let k = size.width / scene.layout.width
+        let r = ImageRenderer(content: HorizonCanvas(scene: scene, layer: .glow).frame(width: size.width, height: size.height))
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        r.scale = scale
+        guard let full = r.cgImage,
+              let part = full.cropping(to: CGRect(x: crop.minX * k * scale, y: crop.minY * k * scale,
+                                                  width: crop.width * k * scale, height: crop.height * k * scale)) else { return nil }
+        return NSImage(cgImage: part, size: NSSize(width: crop.width * k, height: crop.height * k))
+    }
+
+    /// The window with `used` in place of its percentage, mid-animation.
+    private func window(_ used: Double) -> UsageWindow? {
+        guard let w = inputs.window else { return nil }
+        return UsageWindow(key: w.key, label: w.label, kind: w.kind, usedPercent: used, resetsAt: w.resetsAt, duration: w.duration)
+    }
+}
+
 /// Paints the quota on the horizon: lit stretch, usage curve, forecast, steady pace, reset, and "now".
+/// Drawn as separate layers so the parts that move (the breathing glow; the flowing forecast is a Core
+/// Animation layer of its own) never force the whole picture, with its blur, to be redrawn.
 struct HorizonCanvas: View {
+    enum Layer { case sky, glow, main }
     let scene: HorizonScene
+    var layer: Layer = .main
 
     var body: some View {
         Canvas { ctx, size in
             let L = scene.layout
             ctx.scaleBy(x: size.width / L.width, y: size.width / L.width)
-            draw(&ctx, L)
+            switch layer {
+            case .sky: drawSky(&ctx, L)
+            case .glow: drawGlow(&ctx, L)
+            case .main: draw(&ctx, L)
+            }
         }
+    }
+
+    private func drawSky(_ ctx: inout GraphicsContext, _ L: HorizonLayout) {
+        // Fades in from the panel's top so it sits on either background without a seam.
+        ctx.fill(Path(CGRect(x: 0, y: 0, width: L.width, height: L.height)),
+                 with: .linearGradient(Gradient(colors: [Color(hex: 0x05060C).opacity(0), Color(hex: 0x0B1428).opacity(0.9)]),
+                                       startPoint: .zero, endPoint: CGPoint(x: 0, y: L.height)))
+    }
+
+    /// The lit stretch of horizon and the sun, blurred; sits under the planet.
+    private func drawGlow(_ ctx: inout GraphicsContext, _ L: HorizonLayout) {
+        let lit = L.arc(from: scene.litFrom, to: scene.nowAngle, r: L.horizon)
+        let sun = scene.sun
+        let shading = GraphicsContext.Shading.linearGradient(
+            Gradient(colors: [Theme.claude, Theme.amber]), startPoint: L.point(scene.litFrom, L.horizon), endPoint: sun)
+        ctx.addFilter(.blur(radius: 16))
+        ctx.opacity = 0.75
+        ctx.stroke(line(lit), with: shading, style: StrokeStyle(lineWidth: 40, lineCap: .round))
+        ctx.fill(Path(ellipseIn: CGRect(x: sun.x - 26, y: sun.y - 26, width: 52, height: 52)), with: .color(Color(hex: 0xFFE2B0).opacity(0.9)))
     }
 
     private func line(_ pts: [CGPoint]) -> Path {
@@ -246,11 +363,6 @@ struct HorizonCanvas: View {
         let now = scene.nowAngle
         let nowX = L.x(angle: now)
 
-        // Sky fades in from the panel's top so it sits on either background without a seam.
-        ctx.fill(Path(CGRect(x: 0, y: 0, width: L.width, height: L.height)),
-                 with: .linearGradient(Gradient(colors: [Color(hex: 0x05060C).opacity(0), Color(hex: 0x0B1428).opacity(0.9)]),
-                                       startPoint: .zero, endPoint: CGPoint(x: 0, y: L.height)))
-
         // No-quota stretch and the 100% line.
         let top = scene.hundredRadius
         if let a = scene.dryFrom, let b = scene.dryTo, b > a {
@@ -267,17 +379,11 @@ struct HorizonCanvas: View {
             label(&ctx, "100%", at: L.point(scene.litFrom, top + 6), anchor: .bottomLeading)
         }
 
-        // Glow of the lit stretch and the sun, behind the planet.
+        // The glow of the lit stretch is its own layer (see `drawGlow`), underneath this one.
         let lit = L.arc(from: scene.litFrom, to: now, r: H)
         let sun = scene.sun
         let litShading = GraphicsContext.Shading.linearGradient(
             Gradient(colors: [Theme.claude, Theme.amber]), startPoint: L.point(scene.litFrom, H), endPoint: sun)
-        ctx.drawLayer { g in
-            g.addFilter(.blur(radius: 16))
-            g.opacity = 0.75
-            g.stroke(line(lit), with: litShading, style: StrokeStyle(lineWidth: 40, lineCap: .round))
-            g.fill(Path(ellipseIn: CGRect(x: sun.x - 26, y: sun.y - 26, width: 52, height: 52)), with: .color(Color(hex: 0xFFE2B0).opacity(0.9)))
-        }
 
         // The planet; its night side continues under the panel as the lanes' ground.
         let c = L.center
@@ -309,8 +415,8 @@ struct HorizonCanvas: View {
         }
 
         // Forecast.
-        if let (from, to) = scene.forecast {
-            ctx.stroke(line([from, to]), with: .color(Theme.amber), style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
+        // The dashed line itself flows on a Core Animation layer (`FlowingDashes`); the end point and words stay here.
+        if let (_, to) = scene.forecast {
             if let at = scene.exhaustAt, scene.dryFrom != nil {
                 ctx.fill(Path(ellipseIn: CGRect(x: to.x - 5, y: to.y - 5, width: 10, height: 10)), with: .color(Theme.amber))
                 label(&ctx, Formatting.clock(at), at: CGPoint(x: to.x, y: to.y - 9), anchor: .bottom, size: 11.5, weight: .bold, color: Theme.amber)
@@ -492,8 +598,8 @@ struct LaneRow: View {
 struct SessionLight: View {
     let lane: HorizonLane
     let context: Double?
-    @State private var pulse = false
-    @State private var ripple = false
+    /// Bumped to send out a ripple.
+    @State private var ripples = 0
     @State private var popped = true
 
     /// A wait or finish this recent still counts as news when the panel opens on it.
@@ -503,12 +609,13 @@ struct SessionLight: View {
         let color = HorizonColor.dot(lane)
         ZStack {
             if lane.role == .waiting {
-                Circle().stroke(Theme.amber, lineWidth: 2).frame(width: 22, height: 22)
-                    .scaleEffect(ripple ? 2.8 : 1)
-                    .opacity(ripple ? 0 : 0.9)
-                Circle().stroke(Theme.amber.opacity(0.45), lineWidth: 1.5).frame(width: 34, height: 34)
-                    .scaleEffect(pulse ? 1.15 : 0.92)
-                    .opacity(pulse ? 0.35 : 1)
+                // Both on Core Animation: as SwiftUI repeating animations they kept the app busy for as long as
+                // anyone waited, even with the panel closed.
+                PulsingCircle(diameter: 22, color: NSColor(Theme.amber), lineWidth: 2, scale: (1, 2.8), opacity: (0.9, 0),
+                              period: 1.0, autoreverses: false, repeats: ripples > 0 ? 3 : 0, trigger: ripples, fps: 30)
+                    .frame(width: 64, height: 64)
+                PulsingCircle(diameter: 34, color: NSColor(Theme.amber.opacity(0.45)), lineWidth: 1.5)
+                    .frame(width: 40, height: 40)
                 Circle().fill(Theme.amber.opacity(0.6)).frame(width: 24, height: 24).blur(radius: 5)
             }
             if lane.role == .done {
@@ -537,20 +644,14 @@ struct SessionLight: View {
     private func react(isNews: Bool) {
         switch lane.role {
         case .waiting:
-            // Restart the steady pulse: a light that turned amber while on screen never started it before.
-            pulse = false
-            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { pulse = true }
-            if isNews {
-                ripple = false
-                withAnimation(.easeOut(duration: 1.0).repeatCount(3, autoreverses: false)) { ripple = true }
-            }
+            if isNews { ripples += 1 }
         case .done:
             if isNews {
                 popped = false
                 withAnimation(.spring(response: 0.38, dampingFraction: 0.45)) { popped = true }
             }
         case .working, .idle:
-            withAnimation(.easeOut(duration: 0.2)) { pulse = false }
+            break
         }
     }
 }
@@ -740,6 +841,8 @@ struct HorizonHeadlineView: View {
         }
         VStack(alignment: .leading, spacing: 3) {
             Text(h.title)
+                .contentTransition(.numericText())
+                .animation(.snappy, value: h.title)
                 .font(.system(size: h.tone == .warning ? 32 : 24, weight: .bold).monospacedDigit())
                 .foregroundStyle(color)
             if let sub = h.subtitle {
@@ -776,6 +879,8 @@ struct SideNumber: View {
             if let side = inputs.side, let w = store.snapshots[side]?.primary {
                 let h = HorizonHeadline(provider: side, window: w, prediction: store.predictions[side])
                 Text(Formatting.percent(w.usedPercent))
+                    .contentTransition(.numericText(value: w.usedPercent))
+                    .animation(.snappy, value: Int(w.usedPercent.rounded()))
                     .font(.system(size: 26, weight: .bold).monospacedDigit())
                     .foregroundStyle(h.tone == .warning ? Theme.amber : (side == .codex ? HorizonColor.codexBright : HorizonColor.claudeBright))
                 Text(side.displayName + " " + HorizonHeadline.windowName(w) + " · " + h.title)

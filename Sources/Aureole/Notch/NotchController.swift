@@ -97,6 +97,14 @@ final class NotchController {
         if let m = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged], handler: handler) {
             monitors.append(m)
         }
+        // Esc closes the open panel. macOS only hands another app's key presses to a monitor once the user has
+        // granted Accessibility (Settings → General offers it); without that this simply never fires.
+        if let m = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
+            guard event.keyCode == 53 else { return }
+            MainActor.assumeIsolated { if self?.model.isOpen == true { self?.setOpen(false) } }
+        }) {
+            monitors.append(m)
+        }
         monitors.append(NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { event in
             handler(event)
             return event

@@ -116,7 +116,6 @@ struct ClosedNotchView: View {
 struct AttentionLine: View {
     let waiting: Int
     let done: Int
-    @State private var pulse = false
     /// One bump when the count goes up, so a new arrival is noticed even with the dot already breathing.
     @State private var waitBump = false
     @State private var doneBump = false
@@ -125,26 +124,26 @@ struct AttentionLine: View {
         HStack(spacing: 10) {
             if waiting > 0 {
                 HStack(spacing: 5) {
-                    Circle().fill(Theme.amber).frame(width: 7, height: 7)
-                        .shadow(color: Theme.amber.opacity(pulse ? 1 : 0.3), radius: pulse ? 5 : 1)
-                        .opacity(pulse ? 1 : 0.55)
+                    // Breathes on Core Animation: this runs for as long as anyone waits, panel open or not.
+                    PulsingCircle(diameter: 7, color: NSColor(Theme.amber), scale: (1, 1.15), opacity: (0.55, 1), period: 1.8, fps: 12)
+                        .frame(width: 9, height: 9)
+                        .shadow(color: Theme.amber.opacity(0.7), radius: 3)
                         .scaleEffect(waitBump ? 1.9 : 1)
                     Text(L10n.f("Waiting %d", waiting)).foregroundStyle(Theme.amber)
+                        .contentTransition(.numericText(value: Double(waiting))).animation(.snappy, value: waiting)
                 }
             }
             if done > 0 {
                 HStack(spacing: 4) {
                     Text("✓").foregroundStyle(Theme.done).scaleEffect(doneBump ? 1.6 : 1)
                     Text(L10n.f("Done %d", done)).foregroundStyle(Theme.done)
+                        .contentTransition(.numericText(value: Double(done))).animation(.snappy, value: done)
                 }
             }
         }
         .font(.system(size: 11, weight: .semibold))
         .lineLimit(1)
         .frame(height: 14)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { pulse = true }
-        }
         .onChange(of: waiting) { old, new in if new > old { bump($waitBump) } }
         .onChange(of: done) { old, new in if new > old { bump($doneBump) } }
     }
@@ -353,6 +352,8 @@ struct WindowLine: View {
                 .frame(width: 34, alignment: .leading)
             PaceBar(window: window, accent: accent)
             Text(Formatting.percent(window.usedPercent))
+                .contentTransition(.numericText(value: window.usedPercent))
+                .animation(.snappy, value: Int(window.usedPercent.rounded()))
                 .font(Theme.mono)
                 .foregroundStyle(Theme.state(for: window, accent: accent))
                 .frame(width: 40, alignment: .trailing)

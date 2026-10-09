@@ -1,4 +1,5 @@
 import SwiftUI
+import ApplicationServices
 import AureoleCore
 
 struct SettingsView: View {
@@ -51,7 +52,11 @@ struct GeneralTab: View {
             Stepper(L10n.f("Critical at %d%%", settings.thresholdCritical), value: $settings.thresholdCritical, in: 80...100, step: 5)
             Toggle(L10n.t("Suggest routing work to the provider with headroom"), isOn: $settings.routingHints)
             Toggle(L10n.t("macOS notifications"), isOn: $settings.nativeNotifications)
+            Toggle(L10n.t("Ambient motion (breathing glow, flowing forecast)"), isOn: $settings.ambientMotion)
+            Text(L10n.t("Off automatically when macOS is set to reduce motion."))
+                .font(.caption).foregroundStyle(.secondary)
             Button(L10n.t("Open the welcome guide…")) { openWelcome() }
+            EscapeRow()
             Toggle(L10n.t("Check for new versions once a day"), isOn: $settings.checkUpdates)
             UpdateRow()
             Text(L10n.f("Version %@ · log at %@", AureoleInfo.version, "~/Library/Logs/Aureole/aureole.log"))
@@ -277,6 +282,26 @@ struct UpdateRow: View {
             Spacer()
             Button(L10n.t("Check now")) { updates.check(force: true) }.disabled(updates.checking)
         }
+    }
+}
+
+/// Esc to close the panel needs Accessibility, so it is offered, never asked for unprompted.
+struct EscapeRow: View {
+    @State private var trusted = AXIsProcessTrusted()
+
+    var body: some View {
+        LabeledContent(L10n.t("Esc closes the panel")) {
+            HStack(spacing: 10) {
+                Text(L10n.t(trusted ? "On" : "Needs Accessibility")).foregroundStyle(.secondary)
+                if !trusted {
+                    Button(L10n.t("Allow…")) {
+                        let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+                        trusted = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
+                    }
+                }
+            }
+        }
+        .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in trusted = AXIsProcessTrusted() }
     }
 }
 
