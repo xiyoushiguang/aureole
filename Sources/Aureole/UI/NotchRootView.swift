@@ -117,6 +117,9 @@ struct AttentionLine: View {
     let waiting: Int
     let done: Int
     @State private var pulse = false
+    /// One bump when the count goes up, so a new arrival is noticed even with the dot already breathing.
+    @State private var waitBump = false
+    @State private var doneBump = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -125,12 +128,13 @@ struct AttentionLine: View {
                     Circle().fill(Theme.amber).frame(width: 7, height: 7)
                         .shadow(color: Theme.amber.opacity(pulse ? 1 : 0.3), radius: pulse ? 5 : 1)
                         .opacity(pulse ? 1 : 0.55)
+                        .scaleEffect(waitBump ? 1.9 : 1)
                     Text(L10n.f("Waiting %d", waiting)).foregroundStyle(Theme.amber)
                 }
             }
             if done > 0 {
                 HStack(spacing: 4) {
-                    Text("✓").foregroundStyle(Theme.done)
+                    Text("✓").foregroundStyle(Theme.done).scaleEffect(doneBump ? 1.6 : 1)
                     Text(L10n.f("Done %d", done)).foregroundStyle(Theme.done)
                 }
             }
@@ -140,6 +144,15 @@ struct AttentionLine: View {
         .frame(height: 14)
         .onAppear {
             withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { pulse = true }
+        }
+        .onChange(of: waiting) { old, new in if new > old { bump($waitBump) } }
+        .onChange(of: done) { old, new in if new > old { bump($doneBump) } }
+    }
+
+    private func bump(_ flag: Binding<Bool>) {
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.5)) { flag.wrappedValue = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) { flag.wrappedValue = false }
         }
     }
 }

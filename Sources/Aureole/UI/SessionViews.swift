@@ -28,6 +28,7 @@ struct TaskList: View {
                     group(L10n.f("Working %d", b.working.count), b.working, color: Color.white.opacity(0.62))
                     group(L10n.f("Idle %d", b.idle.count), b.idle, color: Theme.dim)
                 }
+                .animation(.spring(response: 0.45, dampingFraction: 0.86), value: b.all.map { "\($0.id)|\($0.state)" } + b.done.map(\.id))
                 .background(GeometryReader { g in Color.clear.preference(key: TaskListHeightKey.self, value: g.size.height) })
             }
             .frame(height: min(max(contentHeight, 1), maxHeight))
@@ -40,7 +41,10 @@ struct TaskList: View {
         if !list.isEmpty {
             Text(title).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(color)
                 .padding(.top, 4).padding(.leading, 2)
-            ForEach(list) { TaskRow(session: $0, sessions: sessions, actions: actions, done: done) }
+            ForEach(list) {
+                TaskRow(session: $0, sessions: sessions, actions: actions, done: done)
+                    .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
+            }
         }
     }
 }

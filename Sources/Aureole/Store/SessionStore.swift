@@ -130,10 +130,13 @@ final class SessionStore: ObservableObject {
     }
 
     /// The user's click on a request card. Only reaches the agent while the hook is still waiting.
-    func decide(_ r: ApprovalRequest, _ d: ApprovalDecision) {
+    /// Returns false when the hook had already given up and the terminal is asking.
+    @discardableResult
+    func decide(_ r: ApprovalRequest, _ d: ApprovalDecision) -> Bool {
         let ok = ApprovalFiles.decide(r.id, d)
         AureoleLog.shared.log("panel \(d.rawValue) for \(r.tool) in \(r.sessionId.prefix(8))" + (ok ? "" : " (too late, the terminal is asking)"))
         approvals[r.sessionId] = nil
+        return ok
     }
 
     /// You looked at this session (jumped to it), so its finished task is no longer news.

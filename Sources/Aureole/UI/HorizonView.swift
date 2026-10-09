@@ -113,6 +113,7 @@ struct HorizonPanel: View {
                 SessionCard(session: lane.session, name: sessions.name(of: lane.session), context: sessions.context[id],
                             fraction: sessions.contextFraction(id), approval: sessions.approvals[id],
                             decide: { r, d in sessions.decide(r, d) }, actions: actions)
+                    .id(id)
                     .frame(width: 318)
                     .onHover { inside in
                         hoveringCard = inside
@@ -166,8 +167,11 @@ struct HorizonPanel: View {
                                 context: sessions.context[lane.id], fraction: sessions.contextFraction(lane.id),
                                 approvable: sessions.approvals[lane.id] != nil, actions: actions, onHover: { laneHover(lane.id, $0) })
                             .frame(height: Self.laneHeight)
+                            .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
                     }
                 }
+                // A session that starts waiting slides up to the top instead of jumping there.
+                .animation(.spring(response: 0.45, dampingFraction: 0.86), value: scene.lanes.map { "\($0.id)|\($0.role)" })
                 .background(GeometryReader { g in Color.clear.preference(key: LanesHeightKey.self, value: g.size.height) })
             }
             .frame(height: min(max(lanesHeight, Self.laneHeight), lanesMaxHeight))
@@ -483,21 +487,35 @@ struct LaneRow: View {
 }
 
 /// One session's light: a context ring around a coloured core, an amber halo when it needs you.
+/// News gets one gesture: a session that has just started waiting sends out ripples; one that has just
+/// finished pops in its check mark. Old news only keeps the steady pulse.
 struct SessionLight: View {
     let lane: HorizonLane
     let context: Double?
     @State private var pulse = false
+    @State private var ripple = false
+    @State private var popped = true
+
+    /// A wait or finish this recent still counts as news when the panel opens on it.
+    static let fresh: TimeInterval = 30
 
     var body: some View {
         let color = HorizonColor.dot(lane)
         ZStack {
             if lane.role == .waiting {
+                Circle().stroke(Theme.amber, lineWidth: 2).frame(width: 22, height: 22)
+                    .scaleEffect(ripple ? 2.8 : 1)
+                    .opacity(ripple ? 0 : 0.9)
                 Circle().stroke(Theme.amber.opacity(0.45), lineWidth: 1.5).frame(width: 34, height: 34)
                     .scaleEffect(pulse ? 1.15 : 0.92)
                     .opacity(pulse ? 0.35 : 1)
                 Circle().fill(Theme.amber.opacity(0.6)).frame(width: 24, height: 24).blur(radius: 5)
             }
-            if lane.session.provider == .codex || context == nil {
+            if lane.role == .done {
+                Circle().fill(color.opacity(0.55)).frame(width: 22, height: 22).blur(radius: 5)
+                Circle().fill(color).frame(width: 15, height: 15)
+                Image(systemName: "checkmark").font(.system(size: 8, weight: .black)).foregroundStyle(HorizonColor.ground)
+            } else if lane.session.provider == .codex || context == nil {
                 if lane.role != .idle { Circle().fill(color.opacity(0.6)).frame(width: 16, height: 16).blur(radius: 4) }
                 Circle().fill(color).frame(width: 11, height: 11)
             } else {
@@ -510,10 +528,29 @@ struct SessionLight: View {
                 Circle().fill(color).frame(width: 11, height: 11)
             }
         }
+        .scaleEffect(popped ? 1 : 0.3)
         .frame(width: 40, height: 40)
-        .onAppear {
-            guard lane.role == .waiting else { return }
+        .onAppear { react(isNews: Date().timeIntervalSince(lane.session.stateSince) < Self.fresh) }
+        .onChange(of: lane.role) { _, _ in react(isNews: true) }
+    }
+
+    private func react(isNews: Bool) {
+        switch lane.role {
+        case .waiting:
+            // Restart the steady pulse: a light that turned amber while on screen never started it before.
+            pulse = false
             withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { pulse = true }
+            if isNews {
+                ripple = false
+                withAnimation(.easeOut(duration: 1.0).repeatCount(3, autoreverses: false)) { ripple = true }
+            }
+        case .done:
+            if isNews {
+                popped = false
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.45)) { popped = true }
+            }
+        case .working, .idle:
+            withAnimation(.easeOut(duration: 0.2)) { pulse = false }
         }
     }
 }
@@ -559,7 +596,9 @@ struct SessionCard: View {
     let context: Int?
     let fraction: Double?
     var approval: ApprovalRequest?
-    var decide: (ApprovalRequest, ApprovalDecision) -> Void = { _, _ in }
+    var decide: (ApprovalRequest, ApprovalDecision) -> Bool = { _, _ in false }
+    /// The answer just given from this card, kept on screen for a moment so the click is visibly taken.
+    @State private var answered: (decision: ApprovalDecision, reached: Bool)?
     weak var actions: AppActions?
 
     var body: some View {
@@ -577,7 +616,10 @@ struct SessionCard: View {
                         .fixedSize()
                 }
             }
-            if let r = approval {
+            if let a = answered {
+                answeredBlock(a.decision, reached: a.reached)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+            } else if let r = approval {
                 approvalBlock(r)
             } else if let m = s.waitingMessage {
                 row(L10n.t("Requesting"), m, mono: true)
@@ -633,11 +675,11 @@ struct SessionCard: View {
             .padding(8)
             .background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.45)))
             HStack(spacing: 8) {
-                Button { decide(r, .allow) } label: {
+                Button { answer(r, .allow) } label: {
                     Text(L10n.t("Allow once")).font(.system(size: 12, weight: .semibold)).foregroundStyle(.black)
                         .padding(.horizontal, 14).frame(height: 28).background(Capsule().fill(Theme.amber))
                 }
-                Button { decide(r, .deny) } label: {
+                Button { answer(r, .deny) } label: {
                     Text(L10n.t("Deny")).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
                         .padding(.horizontal, 14).frame(height: 28).background(Capsule().stroke(Color.white.opacity(0.5)))
                 }
@@ -649,6 +691,27 @@ struct SessionCard: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    private func answer(_ r: ApprovalRequest, _ d: ApprovalDecision) {
+        let reached = decide(r, d)
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { answered = (d, reached) }
+    }
+
+    /// "Allowed: Claude carries on" / "Denied" / "Too late: answer in the terminal".
+    private func answeredBlock(_ d: ApprovalDecision, reached: Bool) -> some View {
+        let agent = session.provider.displayName
+        let (icon, color, text): (String, Color, String) =
+            !reached ? ("exclamationmark.circle.fill", Theme.amber, L10n.t("Too late: the terminal is already asking. Answer it there."))
+            : d == .allow ? ("checkmark.circle.fill", Color(red: 0.30, green: 0.80, blue: 0.45), L10n.f("Allowed. %@ carries on.", agent))
+            : ("xmark.circle.fill", Color.white.opacity(0.7), L10n.f("Denied. %@ was told no.", agent))
+        return HStack(spacing: 8) {
+            Image(systemName: icon).font(.system(size: 16, weight: .semibold)).foregroundStyle(color)
+            Text(text).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+        }
+        .padding(.horizontal, 12).frame(height: 36)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.16)))
     }
 
     private func row(_ key: String, _ value: String, mono: Bool = false) -> some View {

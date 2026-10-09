@@ -106,6 +106,8 @@ public enum L10n {
         "kitty: to jump to a window, set allow_remote_control and listen_on in kitty.conf.": "kitty：要跳到具体窗口，需在 kitty.conf 里设置 allow_remote_control 和 listen_on。",
         "Ghostty: tab jumps need Ghostty 1.3 or later; macOS asks once to let Aureole control it.": "Ghostty：跳到标签页需要 1.3 或更新版本；macOS 会问一次是否允许 Aureole 控制它。",
         "Switch to %@": "切换到 %@",
+        "Too late: the terminal is already asking. Answer it there.": "晚了一步：终端里已经在问了，请到终端处理。",
+        "Allowed. %@ carries on.": "已允许，%@ 继续执行。", "Denied. %@ was told no.": "已拒绝，已告知 %@。",
         "working": "干活中", "Last: %@": "上次：%@", "Panel layout": "面板样式", "Horizon": "晨昏线", "List": "列表", "Session tracking is off.": "会话跟踪已关闭。",
         "Context %% is an estimate (200k or 1M window).": "上下文百分比是估算（按 20 万或 100 万窗口）。",
         "Jump to terminal": "跳到终端", "Requesting": "正在请求", "Last": "最近", "Prompt": "提示词", "Folder": "目录",
