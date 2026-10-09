@@ -66,7 +66,7 @@ public enum L10n {
         "No quota here, about %@": "这段没有额度，约 %@", "Steady pace": "匀速用完的线",
         "Claude working": "Claude 在干活", "Codex working": "Codex 在干活", "Waiting on you": "在等你",
         "Small ring = context used": "小环是上下文占用", "context %d%%": "上下文 %d%%", "Context": "上下文",
-        "%@ is waiting for you": "%@ 在等你", "%@ is done": "%@ 干完了", "Finished after %@": "用时 %@",
+        "%@ needs your approval": "%@ 待你批准", "%@ has a question for you": "%@ 待你回答", "%@ is done": "%@ 已完成", "Finished after %@": "用时 %@",
         "Done %d": "完成 %d", "done": "完成", "done · unseen": "完成·未查看",
         "Waiting %d": "等你 %d", "Notify when a session waits": "会话等你时通知", "after %d min": "等 %d 分钟后",
         "Notify when a task is done": "任务干完时通知",

@@ -494,7 +494,8 @@ public struct SessionAlerts: Sendable {
         if let after = waitingAfter {
             for s in board.waiting where now.timeIntervalSince(s.stateSince) >= after {
                 if mark(s, "waiting") {
-                    out.append(.sessionWaiting(provider: s.provider, name: name(s), detail: s.waitingMessage, since: s.stateSince))
+                    out.append(.sessionWaiting(provider: s.provider, name: name(s), detail: s.waitingMessage, since: s.stateSince,
+                                               question: s.state == .waitingInput))
                 }
             }
         }

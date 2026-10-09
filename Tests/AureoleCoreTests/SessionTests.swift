@@ -224,4 +224,13 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(SessionReducer.detail(tool: "shell", input: ["command": ["ls", "-la"]]), "ls -la")
         XCTAssertEqual(SessionReducer.detail(tool: "shell", input: ["command": "make", "description": "Build it"]), "Build it")
     }
+
+    func testAlertTitlesSayWhatIsNeeded() {
+        L10n.language = .chineseSimplified
+        defer { L10n.language = .english }
+        let since = t0
+        XCTAssertEqual(UsageEvent.sessionWaiting(provider: .claude, name: "退款", detail: nil, since: since, question: false).title, "🟠 退款 待你批准")
+        XCTAssertEqual(UsageEvent.sessionWaiting(provider: .claude, name: "首屏", detail: nil, since: since, question: true).title, "🟠 首屏 待你回答")
+        XCTAssertEqual(UsageEvent.sessionDone(provider: .claude, name: "文档站", took: 600).title, "✅ 文档站 已完成")
+    }
 }
