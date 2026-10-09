@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.1 — 2026-10-08
+
+- **Motion that marks news.** A session that has just started waiting sends out a ripple; one that has
+  just finished pops in its check mark; lanes slide to their new place; the closed notch's dot bumps
+  when the count rises; Allow once / Deny confirm on the card (or say it was too late).
+- **Ambient motion.** The lit stretch of horizon breathes and the forecast flows toward where it ends;
+  new readings slide the curve into place; numbers roll. Off in Settings, and with Reduce Motion.
+- **Much less CPU.** Animations run on Core Animation at low frame rates over small areas. Fixes an
+  older drain: while a session waited, the pulsing kept Aureole at about 5% CPU with the panel closed
+  (28% open, plus the window server); now about 0.2% (1–2%).
+- **Esc closes the panel** once Accessibility is granted (offered in Settings → General).
+- **Clearer alerts:** "✅ … is done", "🟠 … needs your approval", "🟠 … has a question for you".
+- If macOS refuses notifications, the log now says so instead of staying silent.
+
 ## 0.4.0 — 2026-10-03
 
 - **Signed and notarized.** Releases are signed with a Developer ID and notarized by Apple: no more
