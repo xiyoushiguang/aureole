@@ -53,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
                                ("app.aureole.statusline-install", { [weak self] in self?.sessions.installStatusline() }),
                                ("app.aureole.statusline-remove", { [weak self] in self?.sessions.uninstallStatusline() }),
                                ("app.aureole.welcome", { [weak self] in self?.openWelcome() }),
+                               ("app.aureole.notify-test", { [weak self] in self?.store.sendTest(to: ChannelConfig(kind: .native)) }),
                                ("app.aureole.codex-hooks-install", { [weak self] in self?.sessions.installCodexHooks() }),
                                ("app.aureole.codex-hooks-remove", { [weak self] in self?.sessions.uninstallCodexHooks() }),
                                ("app.aureole.refresh", { [weak self] in self?.refreshNow() })] as [(String, () -> Void)] {

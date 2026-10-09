@@ -267,9 +267,14 @@ enum NativeNotifier {
             }
         }
         if authorized { deliver(); return }
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
             authorized = granted
-            if granted { deliver() }
+            if granted {
+                deliver()
+            } else {
+                // Without this line a refused or failed request looked exactly like a delivered notification.
+                AureoleLog.shared.log("notifications not allowed: \(error.map { "\($0)" } ?? "the user has turned them off in System Settings")")
+            }
         }
     }
 }
