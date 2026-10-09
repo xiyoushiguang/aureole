@@ -9,6 +9,9 @@ public enum UpdateChecker {
     public struct Release: Equatable, Sendable {
         public let version: String
         public let url: URL
+        /// The notarized disk image attached to the release, for installing in place.
+        public var dmgURL: URL?
+        public init(version: String, url: URL, dmgURL: URL? = nil) { self.version = version; self.url = url; self.dmgURL = dmgURL }
     }
 
     /// The newer release, or nil when we are current (or the answer is unusable).
@@ -22,7 +25,27 @@ public enum UpdateChecker {
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let tag = obj["tag_name"] as? String else { return nil }
         let url = (obj["html_url"] as? String).flatMap(URL.init(string:)) ?? releasesPage
-        return isNewer(tag, than: current) ? Release(version: normalized(tag), url: url) : nil
+        return isNewer(tag, than: current) ? Release(version: normalized(tag), url: url, dmgURL: dmgAsset(obj)) : nil
+    }
+
+    /// The .dmg among a release's assets, served from GitHub only.
+    public static func dmgAsset(_ release: [String: Any]) -> URL? {
+        let assets = release["assets"] as? [[String: Any]] ?? []
+        return assets.compactMap { a -> URL? in
+            guard let name = a["name"] as? String, name.hasSuffix(".dmg"),
+                  let s = a["browser_download_url"] as? String, let u = URL(string: s),
+                  u.scheme == "https", u.host == "github.com" else { return nil }
+            return u
+        }.first
+    }
+
+    /// "TeamIdentifier=49KHQQ9Y53" in `codesign -dv` output → "49KHQQ9Y53"; nil when unsigned or ad hoc.
+    public static func teamIdentifier(inCodesignOutput text: String) -> String? {
+        for line in text.split(whereSeparator: \.isNewline) where line.hasPrefix("TeamIdentifier=") {
+            let id = String(line.dropFirst("TeamIdentifier=".count))
+            return id == "not set" || id.isEmpty ? nil : id
+        }
+        return nil
     }
 
     /// "v0.3.1" vs "0.3.0" → true. A "dev" build never asks to update.

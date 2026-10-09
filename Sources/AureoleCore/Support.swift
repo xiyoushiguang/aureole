@@ -76,7 +76,7 @@ public enum DateParsing {
 public final class AureoleLog: @unchecked Sendable {
     public static let shared = AureoleLog()
     private let queue = DispatchQueue(label: "app.aureole.log")
-    private let url: URL
+    public let url: URL
     private let formatter: DateFormatter
 
     private init() {

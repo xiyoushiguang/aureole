@@ -74,6 +74,25 @@ Releases from 0.4.0 on are signed with a Developer ID and notarized by Apple, so
 other app. (0.3.0 and earlier were not: if you still have one, macOS 15 needs **System Settings →
 Privacy & Security → Open Anyway** once.) A Homebrew tap may follow.
 
+### Updating
+
+When a new release is out, the panel footer says **Update to x.y.z ›**. A click downloads the disk
+image from GitHub, checks that it is signed by the same developer and passes Gatekeeper, moves the old
+copy to the Trash, puts the new one in its place and reopens Aureole. If any check fails, nothing is
+replaced and the release page opens instead.
+
+### Uninstalling
+
+Use **Settings → General → Uninstall Aureole…**. It removes Aureole's hooks from
+`~/.claude/settings.json` and `~/.codex/hooks.json`, puts back the status line you had before, turns off
+launch at login, and moves Aureole's data, logs and the app to the Trash. Your other hooks are kept.
+
+If you already deleted the app, clean up by hand: remove every hook entry whose command contains
+`aureole-hook` from `~/.claude/settings.json` and `~/.codex/hooks.json`; if `statusLine` points at
+`aureole-hook --statusline`, restore it from `~/Library/Application Support/Aureole/statusline-chain.json`
+(or delete it); then delete `~/Library/Application Support/Aureole` and `~/Library/Logs/Aureole`.
+Aureole made a one-time backup of each file it edited next to it (`*.bak-aureole`).
+
 ## How it reads your usage
 
 Aureole reuses the sign-ins you already have. It never asks for passwords and never refreshes or
@@ -102,7 +121,16 @@ Aureole shows an error instead of a number until it is updated.
 
 Session lanes need a one-time setup: **Settings → Sessions → Install hooks**. That registers a
 small helper (`aureole-hook`) in `~/.claude/settings.json` for eight hook events, keeping any hooks
-you already have. Sessions are named by the title Claude Code gives the conversation.
+you already have. Sessions are named by the title Claude Code or Codex gives the conversation; until
+there is one, by the first line of your first prompt; two sessions that would read the same get "· 2".
+
+**Background runs** (`claude -p`, `codex exec`, or anything started with neither a terminal nor an app
+above it, such as a cron job) are listed at the bottom, marked *Background*, and never notified.
+
+**Notifications stay quiet when they would only repeat what you see:** nothing is sent while the
+session's terminal or app is in front and you have used the Mac in the last minute. Hover a session and
+click **Mute** to stop hearing about it; **Settings → General → Quiet hours** holds back every push
+(macOS and channels) in the hours you pick. The panel always shows everything.
 
 Sessions and the horizon panel arrived in v0.2.0.
 
@@ -135,9 +163,14 @@ and **Deny**. Nothing is allowed without that click, and there is no "always all
 waits (15, 30 or 60 seconds, your choice) the terminal prompt is held back; if you do not answer, it
 appears as usual. Works for Claude Code and Codex.
 
+When Claude asks you a question (its multiple-choice prompt), the same card shows the options: pick one
+(or several, where allowed) and **Send answer**. Claude Code only.
+
 ## Privacy
 
 - No accounts, no telemetry, no analytics.
+- **Settings → General → Copy diagnostics** puts versions, install state and recent errors on the
+  clipboard for a bug report. It leaves out tokens, prompts, session names and folders.
 - Once a day Aureole asks GitHub's public API for the latest release (switch it off in Settings → General).
 - Notification channel settings (webhook URLs, bot tokens) are stored in
   `~/Library/Application Support/Aureole/channels.json` with `0600` permissions.

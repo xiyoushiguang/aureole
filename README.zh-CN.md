@@ -62,6 +62,21 @@ open build/Aureole.app
 从 0.4.0 起，发行版使用 Developer ID 签名并经过苹果公证，下载后像普通 app 一样直接打开。
 （0.3.0 及更早的版本未经公证：macOS 15 上需要去 **系统设置 → 隐私与安全性** 点一次 **仍要打开**。）之后可能会提供 Homebrew tap。
 
+### 更新
+
+有新版本时，面板底部会出现 **更新到 x.y.z ›**。点一下，Aureole 会从 GitHub 下载磁盘映像，校验它和当前版本出自同一开发者、
+能通过 Gatekeeper，然后把旧版移到废纸篓、换上新版并重新打开。任何一步校验不过，都不会替换，改为打开发布页。
+
+### 卸载
+
+用 **设置 → 通用 → 卸载 Aureole…**：它会从 `~/.claude/settings.json` 和 `~/.codex/hooks.json` 里移除 Aureole 的 hooks，
+恢复你原来的状态栏，关闭登录时启动，并把 Aureole 的数据、日志和 app 本身移到废纸篓。你自己的其他 hooks 原样保留。
+
+如果已经直接删掉了 app，可以手动清理：在 `~/.claude/settings.json` 和 `~/.codex/hooks.json` 里删掉命令中含 `aureole-hook`
+的 hook 条目；如果 `statusLine` 指向 `aureole-hook --statusline`，用 `~/Library/Application Support/Aureole/statusline-chain.json`
+里的原设置替换回去（或直接删掉）；最后删除 `~/Library/Application Support/Aureole` 和 `~/Library/Logs/Aureole`。
+Aureole 改动过的每个文件旁边都有一份一次性备份（`*.bak-aureole`）。
+
 ## 额度是怎么读到的
 
 Aureole 复用你已经有的登录状态。它从不索要密码，也从不刷新或写入 token：刷新会让 Claude Code 或 Codex
@@ -84,7 +99,14 @@ Aureole 复用你已经有的登录状态。它从不索要密码，也从不刷
 ## 会话
 
 会话横道需要一次性设置：**设置 → 会话 → 安装 hooks**。它会在 `~/.claude/settings.json` 里为 8 个 hook 事件
-登记一个小程序（`aureole-hook`），你原有的 hooks 原样保留。会话名用的是 Claude Code 给对话起的标题。
+登记一个小程序（`aureole-hook`），你原有的 hooks 原样保留。会话名用 Claude Code 或 Codex 给对话起的标题；
+还没有标题时，用你第一条提示词的第一行；两个会话名字相同时，后开的那个加「· 2」。
+
+**后台任务**（`claude -p`、`codex exec`，或者既没有终端、也不在任何 app 里启动的，比如定时脚本）排在最下面，标着「后台」，从不推送通知。
+
+**不重复提醒你已经看到的事：** 如果那个会话所在的终端或 app 正在最前面，而且你一分钟内动过电脑，就不推送。
+鼠标移到会话上点 **静音**，这个会话以后都不提醒；**设置 → 通用 → 免打扰时段** 让你选的时间段里所有推送（系统通知和各渠道）都暂停。
+面板始终显示全部内容。
 
 会话和晨昏线面板从 v0.2.0 开始提供。
 
@@ -113,9 +135,12 @@ Aureole 复用你已经有的登录状态。它从不索要密码，也从不刷
 以及 **允许这一次** 和 **拒绝**。没有你的点击绝不会放行，也没有「总是允许」。Aureole 等待期间（15、30 或 60 秒，可选）终端里的
 确认框会暂缓出现；你没回应，它就照常弹出。Claude Code 和 Codex 都支持。
 
+Claude 向你提问（多选题那种）时，同一张卡片会列出选项：点一个（允许多选时可以点几个），再点 **发送回答**。仅支持 Claude Code。
+
 ## 隐私
 
 - 没有账号，没有遥测，没有统计。
+- **设置 → 通用 → 复制诊断信息** 会把版本、安装状态和最近的错误复制到剪贴板，方便报 bug；不含 token、提示词、会话名和目录。
 - 每天向 GitHub 公开接口查询一次最新版本（可在 设置 → 通用 里关闭）。
 - 通知渠道设置（webhook 地址、机器人 token）存放在 `~/Library/Application Support/Aureole/channels.json`，权限 `0600`。
 - 用于预测消耗速度的采样存在旁边的 `history.json`，保留七天。

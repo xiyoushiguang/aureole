@@ -53,6 +53,38 @@ public enum ProcessTree {
         return String(cString: buf)
     }
 
+    /// The command line a process was started with (argv), or nil when it cannot be read.
+    public static func arguments(_ pid: pid_t) -> [String]? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return nil }
+        var buf = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buf, &size, nil, 0) == 0 else { return nil }
+        // Layout: argc (Int32), the executable path, NUL padding, then argc NUL-terminated strings.
+        let argc = buf.withUnsafeBytes { $0.load(as: Int32.self) }
+        var i = MemoryLayout<Int32>.size
+        while i < size, buf[i] != 0 { i += 1 }
+        while i < size, buf[i] == 0 { i += 1 }
+        var args: [String] = []
+        while args.count < argc, i < size {
+            let start = i
+            while i < size, buf[i] != 0 { i += 1 }
+            args.append(String(decoding: buf[start..<i], as: UTF8.self))
+            i += 1
+        }
+        return args
+    }
+
+    /// Whether an agent was started to run unattended: `claude -p` / `--print`, or `codex exec`.
+    public static func isHeadless(arguments args: [String]) -> Bool {
+        let rest = args.dropFirst()
+        if rest.contains("-p") || rest.contains("--print") { return true }
+        if let first = rest.first(where: { !$0.hasPrefix("-") }), first == "exec" || first == "e" {
+            return args.first.map { ($0 as NSString).lastPathComponent.hasPrefix("codex") } ?? false
+        }
+        return false
+    }
+
     /// The path of the outermost .app in an executable path ("/Applications/ChatGPT.app/…/codex" → ChatGPT.app).
     public static func outermostApp(inPath path: String) -> String? {
         guard let r = path.range(of: ".app/") else { return nil }

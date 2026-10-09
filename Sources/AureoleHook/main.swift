@@ -35,6 +35,26 @@ func main() {
     }
     try? SessionFiles.save(session)
     if event.name == "PermissionRequest" { offerPanelApproval(event, session: session) }
+    if event.name == "PreToolUse", event.toolName == "AskUserQuestion" { offerPanelAnswer(event, session: session) }
+}
+
+/// Claude asked a question: with panel approvals on, let the user pick an answer in Aureole. No answer in time:
+/// print nothing, and Claude shows the question in the terminal as usual.
+func offerPanelAnswer(_ event: HookEvent, session: AgentSession) {
+    let seconds = UserDefaults(suiteName: "app.aureole.Aureole")?.integer(forKey: ApprovalFiles.waitKey) ?? 0
+    guard seconds > 0, let input = event.toolInput, let questions = ApprovalRequest.questions(from: input) else { return }
+    let now = Date()
+    let request = ApprovalRequest(id: event.toolUseId ?? UUID().uuidString, sessionId: event.sessionId,
+                                  provider: session.provider, tool: "AskUserQuestion",
+                                  full: questions.map(\.question).joined(separator: "\n"),
+                                  at: now, expires: now.addingTimeInterval(TimeInterval(min(seconds, 60))),
+                                  questions: questions)
+    guard (try? ApprovalFiles.save(request)) != nil else { return }
+    let reply = ApprovalFiles.waitReply(for: request.id, until: request.expires)
+    ApprovalFiles.remove(request.id)
+    if case .answers(let answers)? = reply {
+        FileHandle.standardOutput.write(Data(ApprovalReply.answersOutput(answers, input: input).utf8))
+    }
 }
 
 /// When "approve from the panel" is on, show the request in Aureole and wait briefly for a click.
@@ -104,6 +124,9 @@ func fillProcessInfo(_ s: inout AgentSession) {
     if s.bundleId == nil { s.bundleId = ProcessTree.rootAppBundleId(of: agent) }
     // Hooks run detached from the terminal, so ask the agent process which tty it sits on.
     s.tty = ProcessTree.controllingTTY(of: agent) ?? ProcessTree.controllingTTY(of: getpid())
+    // Unattended: started with -p / exec, or with neither a terminal nor an app above it (launchd, cron).
+    let headless = ProcessTree.arguments(agent).map(ProcessTree.isHeadless(arguments:)) ?? false
+    s.background = headless || (s.tty == nil && s.bundleId == nil && s.termProgram == nil)
 }
 
 main()

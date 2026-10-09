@@ -355,6 +355,20 @@ public enum ChannelDispatcher {
 }
 
 public enum Formatting {
+    /// "Extra $21.25 / $50 · 42%" (or just the percent) once any paid usage beyond the plan has accrued.
+    public static func spend(_ snap: ProviderSnapshot) -> String? {
+        guard let w = snap.windows.first(where: { $0.isSpend }), w.usedPercent > 0 || (w.usedUSD ?? 0) > 0 else { return nil }
+        var text = L10n.t("Extra")
+        if let used = w.usedUSD {
+            text += String(format: " $%.2f", used)
+            if let cap = w.limitUSD { text += String(format: " / $%.0f", cap) }
+            text += " · " + percent(w.usedPercent)
+        } else {
+            text += " " + percent(w.usedPercent)
+        }
+        return text
+    }
+
     private static func formatter(_ pattern: String) -> DateFormatter {
         let f = DateFormatter()
         f.locale = L10n.locale

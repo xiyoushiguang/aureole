@@ -43,6 +43,8 @@ final class NotchController {
     private var closeWork: DispatchWorkItem?
 
     private var cancellables: Set<AnyCancellable> = []
+    /// Move to whichever screen the pointer goes to (while closed).
+    var followsPointer = false
 
     init(store: UsageStore, sessions: SessionStore, settings: SettingsStore, actions: AppActions) {
         sessions.$board.sink { [weak self] b in
@@ -112,6 +114,11 @@ final class NotchController {
     }
 
     private func mouseMoved(to point: NSPoint) {
+        if followsPointer, !model.isOpen, !model.geometry.screenFrame.contains(point),
+           let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) {
+            attach(to: screen)
+            return
+        }
         if model.isOpen {
             if model.pinned { return }
             if openRect.insetBy(dx: -10, dy: -10).contains(point) {

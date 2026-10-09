@@ -38,6 +38,10 @@ public struct AgentSession: Codable, Equatable, Identifiable, Sendable {
     public var lastDetail: String?
     public var waitingMessage: String?
     public var promptPreview: String?
+    /// The opening of the first prompt, kept as a name for sessions the agent never titled.
+    public var firstPrompt: String?
+    /// Started to run unattended (`claude -p`, `codex exec`, a script with no terminal): shown apart, never announced.
+    public var background: Bool?
     public var turns: Int = 0
     /// When the current (or last) turn began; tells a long task that finished from a quick reply.
     public var turnStartedAt: Date?
@@ -153,7 +157,10 @@ public enum SessionReducer {
             s.waitingMessage = nil
             s.lastTool = nil
             s.lastDetail = nil
-            if keepPrompt, let p = e.prompt { s.promptPreview = Self.oneLine(p, max: 80) }
+            if keepPrompt, let p = e.prompt {
+                s.promptPreview = Self.oneLine(p, max: 80)
+                if s.firstPrompt == nil, let name = Self.promptName(p) { s.firstPrompt = name }
+            }
         case "PreToolUse":
             s.lastTool = e.toolName
             s.lastDetail = Self.detail(tool: e.toolName, input: e.toolInput)
@@ -232,6 +239,14 @@ public enum SessionReducer {
         }
     }
 
+    /// A short name from a prompt: its first line, without slash commands or pasted blocks.
+    public static func promptName(_ p: String) -> String? {
+        let line = p.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty && !$0.hasPrefix("<") && !$0.hasPrefix("/") }
+        guard let line else { return nil }
+        return oneLine(line, max: 28)
+    }
+
     static func oneLine(_ s: String, max: Int) -> String {
         let flat = s.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
         let trimmed = flat.trimmingCharacters(in: .whitespaces)
@@ -246,11 +261,13 @@ public struct SessionBoard: Equatable, Sendable {
     public var done: [AgentSession] = []
     public var working: [AgentSession] = []
     public var idle: [AgentSession] = []
+    /// Unattended runs (scripts, `claude -p`, `codex exec`): listed last, never counted as needing you.
+    public var background: [AgentSession] = []
 
     public init() {}
 
-    public var isEmpty: Bool { waiting.isEmpty && done.isEmpty && working.isEmpty && idle.isEmpty }
-    public var all: [AgentSession] { waiting + done + working + idle }
+    public var isEmpty: Bool { waiting.isEmpty && done.isEmpty && working.isEmpty && idle.isEmpty && background.isEmpty }
+    public var all: [AgentSession] { waiting + done + working + idle + background }
 
     /// A turn this long or longer counts as a task worth telling you about when it ends.
     public static let doneMinimumTurn: TimeInterval = 60
@@ -270,6 +287,7 @@ public struct SessionBoard: Equatable, Sendable {
         var b = SessionBoard()
         for s in sessions {
             guard s.state != .ended, now.timeIntervalSince(s.updatedAt) < staleAfter, alive(s) else { continue }
+            if s.background == true { b.background.append(s); continue }
             switch s.state {
             case .waitingPermission, .waitingInput: b.waiting.append(s)
             case .working: b.working.append(s)
@@ -281,6 +299,7 @@ public struct SessionBoard: Equatable, Sendable {
         b.done.sort { $0.stateSince > $1.stateSince }
         b.working.sort { $0.updatedAt > $1.updatedAt }
         b.idle.sort { $0.updatedAt > $1.updatedAt }
+        b.background.sort { $0.updatedAt > $1.updatedAt }
         return b
     }
 }
@@ -368,9 +387,9 @@ public enum HookInstaller {
                 return e
             }
             if install {
-                // PermissionRequest may wait for a click in the panel (at most a minute) when that is turned on.
-                // SessionEnd: Codex allows at most 3 s there, and there is nothing slow to do anyway.
-                let timeout = event == "PermissionRequest" ? 120 : event == "SessionEnd" ? 3 : 5
+                // PermissionRequest (and PreToolUse, for Claude's questions) may wait for a click in the panel, at
+                // most a minute, when that is turned on. SessionEnd: Codex allows at most 3 s there.
+                let timeout = event == "PermissionRequest" || event == "PreToolUse" ? 120 : event == "SessionEnd" ? 3 : 5
                 list.append(["hooks": [["type": "command", "command": quoted(helperPath) + arguments, "timeout": timeout]]])
             }
             if list.isEmpty { hooks[event] = nil } else { hooks[event] = list }
@@ -489,11 +508,14 @@ public struct SessionAlerts: Sendable {
         self.announceDone = announceDone
     }
 
-    public mutating func check(_ board: SessionBoard, now: Date, name: (AgentSession) -> String) -> [UsageEvent] {
+    /// `silent` sessions (muted, or one you are looking at right now) are marked as announced without an event,
+    /// so the same wait or finish does not come back later.
+    public mutating func check(_ board: SessionBoard, now: Date, name: (AgentSession) -> String,
+                               silent: (AgentSession) -> Bool = { _ in false }) -> [UsageEvent] {
         var out: [UsageEvent] = []
         if let after = waitingAfter {
             for s in board.waiting where now.timeIntervalSince(s.stateSince) >= after {
-                if mark(s, "waiting") {
+                if mark(s, "waiting"), !silent(s) {
                     out.append(.sessionWaiting(provider: s.provider, name: name(s), detail: s.waitingMessage, since: s.stateSince,
                                                question: s.state == .waitingInput))
                 }
@@ -501,7 +523,7 @@ public struct SessionAlerts: Sendable {
         }
         if announceDone {
             for s in board.done where now.timeIntervalSince(s.stateSince) <= doneFreshness {
-                if mark(s, "done") {
+                if mark(s, "done"), !silent(s) {
                     out.append(.sessionDone(provider: s.provider, name: name(s), took: s.stateSince.timeIntervalSince(s.turnStartedAt ?? s.stateSince)))
                 }
             }
@@ -515,3 +537,61 @@ public struct SessionAlerts: Sendable {
     }
 }
 
+
+/// Session names that tell sessions apart: the agent's title, else the first prompt, else the folder;
+/// two sessions that still share a name get "· 2", "· 3" in start order.
+public enum SessionNames {
+    public static func resolve(_ sessions: [AgentSession], title: (AgentSession) -> String?) -> [String: String] {
+        var out: [String: String] = [:]
+        for s in sessions { out[s.sessionId] = title(s) ?? s.firstPrompt ?? s.projectName }
+        let groups = Dictionary(grouping: sessions, by: { out[$0.sessionId] ?? "" })
+        for (_, group) in groups where group.count > 1 {
+            for (i, s) in group.sorted(by: { $0.startedAt < $1.startedAt }).enumerated() where i > 0 {
+                out[s.sessionId] = (out[s.sessionId] ?? "") + " · \(i + 1)"
+            }
+        }
+        return out
+    }
+}
+
+/// Reads Codex's own conversation titles (the names its desktop app shows) from ~/.codex/session_index.jsonl.
+public enum CodexTitles {
+    public static var indexURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/session_index.jsonl")
+    }
+
+    /// Titles for the given thread ids, from the last part of the index (newest entries are appended).
+    public static func titles(for ids: Set<String>, url: URL = indexURL, tailBytes: UInt64 = 1 << 20) -> [String: String] {
+        guard !ids.isEmpty, let h = FileHandle(forReadingAtPath: url.path) else { return [:] }
+        defer { try? h.close() }
+        let size = (try? h.seekToEnd()) ?? 0
+        try? h.seek(toOffset: size > tailBytes ? size - tailBytes : 0)
+        guard let data = try? h.readToEnd() else { return [:] }
+        return titles(inTail: String(decoding: data, as: UTF8.self), ids: ids)
+    }
+
+    public static func titles(inTail text: String, ids: Set<String>) -> [String: String] {
+        var out: [String: String] = [:]
+        for line in text.split(separator: "\n") where ids.contains(where: { line.contains($0) }) {
+            guard let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                  let id = obj["id"] as? String, ids.contains(id),
+                  let name = obj["thread_name"] as? String, !name.isEmpty else { continue }
+            out[id] = name   // later lines win: a renamed thread is appended again
+        }
+        return out
+    }
+}
+
+/// Hours when nothing is pushed (the panel still shows everything). Minutes after midnight; may wrap past it.
+public struct QuietHours: Equatable, Codable, Sendable {
+    public var start: Int
+    public var end: Int
+    public init(start: Int, end: Int) { self.start = start; self.end = end }
+
+    public func contains(_ date: Date, calendar: Calendar = .current) -> Bool {
+        let c = calendar.dateComponents([.hour, .minute], from: date)
+        let m = (c.hour ?? 0) * 60 + (c.minute ?? 0)
+        if start == end { return false }
+        return start < end ? (m >= start && m < end) : (m >= start || m < end)
+    }
+}

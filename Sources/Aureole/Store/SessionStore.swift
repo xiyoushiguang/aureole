@@ -11,6 +11,10 @@ final class SessionStore: ObservableObject {
     @Published private(set) var context: [String: Int] = [:]
     /// Conversation titles Claude Code generates, read from the same transcript tail.
     @Published private(set) var titles: [String: String] = [:]
+    /// What each session is called on screen; unique even when two sessions share a folder.
+    @Published private(set) var names: [String: String] = [:]
+    /// Sessions you asked not to hear about again. Shown as usual, never announced.
+    @Published private(set) var muted: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "mutedSessions") ?? [])
     @Published private(set) var hookStatus: HookInstaller.Status = .notInstalled
     @Published private(set) var statuslineInstalled = false
     @Published private(set) var codexHookStatus: HookInstaller.Status = .notInstalled
@@ -49,6 +53,8 @@ final class SessionStore: ObservableObject {
     func start() {
         installHelperIfNeeded()
         refreshHookStatus()
+        // Hooks registered by an older version may lack the longer timeouts panel approvals and answers need.
+        if settings.approveFromPanelSeconds > 0 { refreshHookTimeouts() }
         reload()
         watch()
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
@@ -115,17 +121,30 @@ final class SessionStore: ObservableObject {
         if live != sessions { sessions = live }
         if newBoard != board { board = newBoard }
         refreshContext(for: live, now: now)
+        refreshCodexTitles(for: live, now: now)
+        let newNames = SessionNames.resolve(live) { [titles] in titles[$0.sessionId] }
+        if newNames != names { names = newNames }
         var open: [String: ApprovalRequest] = [:]
         if settings.approveFromPanelSeconds > 0 {
             for r in ApprovalFiles.pending(now: now) { open[r.sessionId] = r }
         }
         if open != approvals { approvals = open }
         var reported: [String: Double] = [:]
-        for f in StatuslineFiles.loadAll(now: now) { if let pct = f.contextPercent { reported[f.sessionId] = pct / 100 } }
+        for f in StatuslineFiles.loadAll(now: now) {
+            if let pct = f.contextPercent { reported[f.sessionId] = pct / 100 }
+            if let n = f.sessionName, titles[f.sessionId] != n { titles[f.sessionId] = n }
+        }
         if reported != contextReported { contextReported = reported }
         alerts.waitingAfter = settings.notifyWaitingMinutes > 0 ? TimeInterval(settings.notifyWaitingMinutes * 60) : nil
         alerts.announceDone = settings.notifyDone
-        let events = alerts.check(newBoard, now: now, name: name(of:))
+        let events = alerts.check(newBoard, now: now, name: name(of:), silent: { [muted] s in
+            if muted.contains(s.sessionId) { return true }
+            if Presence.isWatching(s) {
+                AureoleLog.shared.log("not announcing \(s.sessionId.prefix(8)): its app is in front and you are active")
+                return true
+            }
+            return false
+        })
         if !events.isEmpty { onEvents?(events) }
     }
 
@@ -135,6 +154,45 @@ final class SessionStore: ObservableObject {
     func decide(_ r: ApprovalRequest, _ d: ApprovalDecision) -> Bool {
         let ok = ApprovalFiles.decide(r.id, d)
         AureoleLog.shared.log("panel \(d.rawValue) for \(r.tool) in \(r.sessionId.prefix(8))" + (ok ? "" : " (too late, the terminal is asking)"))
+        approvals[r.sessionId] = nil
+        return ok
+    }
+
+    func isMuted(_ s: AgentSession) -> Bool { muted.contains(s.sessionId) }
+
+    /// Stops (or resumes) notifications for one session; it stays on the panel either way.
+    func setMuted(_ s: AgentSession, _ on: Bool) {
+        if on { muted.insert(s.sessionId) } else { muted.remove(s.sessionId) }
+        let live = Set(sessions.map(\.sessionId))
+        muted = muted.filter { live.contains($0) || $0 == s.sessionId }
+        UserDefaults.standard.set(Array(muted), forKey: "mutedSessions")
+    }
+
+    private var codexTitlesChecked = Date.distantPast
+
+    /// Codex names its threads (the titles its desktop app shows); read them every 30 s at most.
+    private func refreshCodexTitles(for live: [AgentSession], now: Date) {
+        let ids = Set(live.filter { $0.provider == .codex && titles[$0.sessionId] == nil }.map(\.sessionId))
+        guard !ids.isEmpty, now.timeIntervalSince(codexTitlesChecked) > 30 else { return }
+        codexTitlesChecked = now
+        contextQueue.async { [weak self] in
+            let found = CodexTitles.titles(for: ids)
+            guard !found.isEmpty else { return }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    for (id, t) in found where self.titles[id] != t { self.titles[id] = t }
+                    self.reload()
+                }
+            }
+        }
+    }
+
+    /// Answers to Claude's question, picked in the panel. False when the terminal is already asking.
+    @discardableResult
+    func answer(_ r: ApprovalRequest, _ answers: [String: String]) -> Bool {
+        let ok = ApprovalFiles.answer(r.id, answers)
+        AureoleLog.shared.log("panel answered a question in \(r.sessionId.prefix(8))" + (ok ? "" : " (too late, the terminal is asking)"))
         approvals[r.sessionId] = nil
         return ok
     }
@@ -221,6 +279,7 @@ final class SessionStore: ObservableObject {
             let current = try HookInstaller.read(url: url)
             let merged = HookInstaller.merge(settings: current, helperPath: Self.helperURL.path, install: installed,
                                              events: HookInstaller.codexEvents, arguments: " " + HookInstaller.codexFlag)
+            guard !NSDictionary(dictionary: merged).isEqual(to: current) else { refreshHookStatus(); return }
             try HookInstaller.write(merged, url: url)
             lastError = nil
             AureoleLog.shared.log(installed ? "Codex hooks installed" : "Codex hooks removed")
@@ -288,6 +347,7 @@ final class SessionStore: ObservableObject {
             installHelperIfNeeded()
             let current = try HookInstaller.read()
             let merged = HookInstaller.merge(settings: current, helperPath: Self.helperURL.path, install: installed)
+            guard !NSDictionary(dictionary: merged).isEqual(to: current) else { refreshHookStatus(); return }
             try HookInstaller.write(merged)
             lastError = nil
             AureoleLog.shared.log(installed ? "Claude Code hooks installed" : "Claude Code hooks removed")
@@ -298,14 +358,30 @@ final class SessionStore: ObservableObject {
         refreshHookStatus()
     }
 
-    /// What to call a session on screen: Claude Code's own title when there is one, else the folder.
-    func name(of s: AgentSession) -> String { titles[s.sessionId] ?? s.projectName }
+    /// What to call a session on screen: the agent's own title, else the first prompt, else the folder;
+    /// numbered when two would read the same.
+    func name(of s: AgentSession) -> String { names[s.sessionId] ?? titles[s.sessionId] ?? s.firstPrompt ?? s.projectName }
 
     // MARK: - Jump
 
     /// Brings the terminal that owns the session to the front; falls back to activating its app.
     func jump(to s: AgentSession) {
         TerminalJumper.jump(to: s)
+    }
+}
+
+/// Whether you are already looking at a session, so telling you again would only be noise.
+enum Presence {
+    /// Seconds since the last key press, click or mouse move anywhere.
+    static var idleSeconds: TimeInterval {
+        CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
+    }
+
+    /// The session's terminal or app is frontmost and you used the Mac in the last minute.
+    @MainActor
+    static func isWatching(_ s: AgentSession) -> Bool {
+        guard let id = s.bundleId, let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier, front == id else { return false }
+        return idleSeconds < 60
     }
 }
 

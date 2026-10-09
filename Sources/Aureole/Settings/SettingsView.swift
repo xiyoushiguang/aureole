@@ -7,10 +7,11 @@ struct SettingsView: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var sessions: SessionStore
     var openWelcome: () -> Void = {}
+    var uninstall: () -> Void = {}
 
     var body: some View {
         TabView {
-            GeneralTab(settings: settings, openWelcome: openWelcome).tabItem { Label(L10n.t("General"), systemImage: "gearshape") }
+            GeneralTab(settings: settings, openWelcome: openWelcome, uninstall: uninstall).tabItem { Label(L10n.t("General"), systemImage: "gearshape") }
             ProvidersTab(settings: settings, store: store).tabItem { Label(L10n.t("Providers"), systemImage: "person.2") }
             SessionsTab(settings: settings, sessions: sessions).tabItem { Label(L10n.t("Sessions"), systemImage: "terminal") }
             ChannelsTab(settings: settings, store: store).tabItem { Label(L10n.t("Notifications"), systemImage: "bell") }
@@ -24,6 +25,7 @@ struct SettingsView: View {
 struct GeneralTab: View {
     @ObservedObject var settings: SettingsStore
     var openWelcome: () -> Void = {}
+    var uninstall: () -> Void = {}
 
     var body: some View {
         Form {
@@ -32,6 +34,13 @@ struct GeneralTab: View {
             }
             Picker(L10n.t("Panel layout"), selection: $settings.panelLayout) {
                 ForEach(PanelLayout.allCases, id: \.self) { Text($0.displayName).tag($0) }
+            }
+            Picker(L10n.t("Show the panel on"), selection: $settings.displayChoice) {
+                ForEach(DisplayChoice.allCases, id: \.self) { Text($0.displayName).tag($0) }
+            }
+            if settings.displayChoice == .mouse {
+                Text(L10n.t("The panel moves to the screen you point at. Without a notch it hangs from the top centre."))
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Picker(L10n.t("Panel background"), selection: $settings.panelStyle) {
                 ForEach(PanelStyle.allCases, id: \.self) { Text($0.displayName).tag($0) }
@@ -52,6 +61,15 @@ struct GeneralTab: View {
             Stepper(L10n.f("Critical at %d%%", settings.thresholdCritical), value: $settings.thresholdCritical, in: 80...100, step: 5)
             Toggle(L10n.t("Suggest routing work to the provider with headroom"), isOn: $settings.routingHints)
             Toggle(L10n.t("macOS notifications"), isOn: $settings.nativeNotifications)
+            Toggle(L10n.t("Quiet hours"), isOn: $settings.quietHoursEnabled)
+            if settings.quietHoursEnabled {
+                HStack {
+                    Picker(L10n.t("From"), selection: $settings.quietStart) { hourOptions }
+                    Picker(L10n.t("To"), selection: $settings.quietEnd) { hourOptions }
+                }
+                Text(L10n.t("Nothing is pushed in these hours, to macOS or to any channel. The panel still shows everything."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Toggle(L10n.t("Ambient motion (breathing glow, flowing forecast)"), isOn: $settings.ambientMotion)
             Text(L10n.t("Off automatically when macOS is set to reduce motion."))
                 .font(.caption).foregroundStyle(.secondary)
@@ -61,8 +79,23 @@ struct GeneralTab: View {
             UpdateRow()
             Text(L10n.f("Version %@ · log at %@", AureoleInfo.version, "~/Library/Logs/Aureole/aureole.log"))
                 .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Button(copied ? L10n.t("Copied") : L10n.t("Copy diagnostics")) {
+                    Diagnostics.copy()
+                    copied = true
+                }
+                .help(L10n.t("Version, macOS, what is installed and recent errors, for a bug report. No tokens, prompts or session names."))
+                Spacer()
+                Button(L10n.t("Uninstall Aureole…"), role: .destructive) { uninstall() }
+            }
         }
         .formStyle(.grouped)
+    }
+
+    @State private var copied = false
+
+    @ViewBuilder private var hourOptions: some View {
+        ForEach(0..<24, id: \.self) { h in Text(String(format: "%02d:00", h)).tag(h * 60) }
     }
 }
 
@@ -160,7 +193,7 @@ struct SessionsTab: View {
                     ForEach([15, 30, 60], id: \.self) { Text(L10n.f("wait up to %d s", $0)).tag($0) }
                 }
                 .onChange(of: settings.approveFromPanelSeconds) { _, v in if v > 0 { sessions.refreshHookTimeouts() } }
-                Text(L10n.t("Hover a waiting session to see the full request and choose Allow once or Deny. Nothing is ever allowed without that click, and there is no \"always allow\". While Aureole waits, the terminal prompt is held back; if you do not answer in time, it appears as usual."))
+                Text(L10n.t("Hover a waiting session to see the full request and choose Allow once or Deny, or pick an answer when Claude asks a question. Nothing is ever allowed without that click, and there is no \"always allow\". While Aureole waits, the terminal prompt is held back; if you do not answer in time, it appears as usual."))
                     .font(.caption).foregroundStyle(.secondary)
                 Text(L10n.t("Uses the same channels as usage alerts (macOS notification, WeChat, etc.)."))
                     .font(.caption).foregroundStyle(.secondary)
@@ -274,8 +307,9 @@ struct UpdateRow: View {
     var body: some View {
         HStack {
             if let r = updates.available {
-                Text(L10n.f("Version %@ is available", r.version)).foregroundStyle(.orange)
-                Button(L10n.t("Download")) { updates.openRelease() }
+                Text(updates.installing ?? L10n.f("Version %@ is available", r.version)).foregroundStyle(.orange)
+                Button(L10n.t("Install and relaunch")) { updates.install() }.disabled(updates.installing != nil)
+                Button(L10n.t("Release notes")) { updates.openRelease() }
             } else {
                 Text(L10n.t(updates.checking ? "Checking…" : "No newer version found")).foregroundStyle(.secondary)
             }

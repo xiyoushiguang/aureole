@@ -95,7 +95,11 @@ public struct HorizonTick: Equatable, Sendable {
 
 /// One session's lane: its working/waiting stretches over the visible past, and what it is doing now.
 public struct HorizonLane: Equatable, Sendable, Identifiable {
-    public enum Role: Equatable, Sendable { case waiting, done, working, idle }
+    public enum Role: Equatable, Sendable {
+        case waiting, done, working, idle, background
+        /// Drawn dim: nothing new and nothing for you to do.
+        public var quiet: Bool { self == .idle || self == .background }
+    }
     public struct Segment: Equatable, Sendable {
         public let from: Double
         public let to: Double
@@ -239,6 +243,7 @@ public struct HorizonScene: Equatable, Sendable {
             + board.done.map { HorizonLane(session: $0, role: .done, segments: segments($0, clock: clock)) }
             + board.working.map { HorizonLane(session: $0, role: .working, segments: segments($0, clock: clock)) }
             + board.idle.map { HorizonLane(session: $0, role: .idle, segments: segments($0, clock: clock)) }
+            + board.background.map { HorizonLane(session: $0, role: .background, segments: segments($0, clock: clock)) }
     }
 
     static func segments(_ s: AgentSession, clock: HorizonClock) -> [HorizonLane.Segment] {

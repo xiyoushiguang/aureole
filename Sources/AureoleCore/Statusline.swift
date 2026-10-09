@@ -16,15 +16,30 @@ public struct StatuslineFeed: Codable, Equatable, Sendable {
     /// 0...100, as Claude Code reports it for the model's real window.
     public var contextPercent: Double?
     public var contextSize: Int?
+    /// The conversation's title (custom or generated), once it has one.
+    public var sessionName: String?
+    /// A spend cap (claude.ai extra usage or a gateway limit): percent used, and dollars when reported.
+    public var spend: Spend?
+
+    public struct Spend: Codable, Equatable, Sendable {
+        public var usedPercent: Double
+        public var resetsAt: Date?
+        public var usedUSD: Double?
+        public var limitUSD: Double?
+        /// "daily", "weekly" or "monthly".
+        public var period: String?
+    }
 
     public init(at: Date, sessionId: String, fiveHour: Limit? = nil, sevenDay: Limit? = nil,
-                contextPercent: Double? = nil, contextSize: Int? = nil) {
+                contextPercent: Double? = nil, contextSize: Int? = nil, sessionName: String? = nil, spend: Spend? = nil) {
         self.at = at
         self.sessionId = sessionId
         self.fiveHour = fiveHour
         self.sevenDay = sevenDay
         self.contextPercent = contextPercent
         self.contextSize = contextSize
+        self.sessionName = sessionName
+        self.spend = spend
     }
 
     /// Reads the status line JSON. `rate_limits` only appears for Pro/Max plans after a session's first
@@ -44,9 +59,18 @@ public struct StatuslineFeed: Codable, Equatable, Sendable {
         let ctx = json["context_window"] as? [String: Any]
         contextPercent = (ctx?["used_percentage"] as? NSNumber)?.doubleValue
         contextSize = (ctx?["context_window_size"] as? NSNumber)?.intValue
+        sessionName = (json["session_name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        if let s = (json["rate_limits"] as? [String: Any])?["spend_limit"] as? [String: Any],
+           let used = (s["used_percentage"] as? NSNumber)?.doubleValue {
+            spend = Spend(usedPercent: used,
+                          resetsAt: (s["resets_at"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) },
+                          usedUSD: (s["used_usd"] as? NSNumber)?.doubleValue,
+                          limitUSD: (s["limit_usd"] as? NSNumber)?.doubleValue,
+                          period: s["period"] as? String)
+        }
     }
 
-    public var hasLimits: Bool { fiveHour != nil || sevenDay != nil }
+    public var hasLimits: Bool { fiveHour != nil || sevenDay != nil || spend != nil }
 
     /// The Claude snapshot with the 5-hour and weekly windows replaced by this feed's numbers; the other
     /// windows (per-model weeklies, extra usage) stay as the endpoint last reported them.
@@ -62,6 +86,10 @@ public struct StatuslineFeed: Codable, Equatable, Sendable {
         if let l = sevenDay {
             put(UsageWindow(key: "seven_day", label: "Week", kind: .sevenDay, usedPercent: l.usedPercent,
                             resetsAt: l.resetsAt, duration: 7 * 86400))
+        }
+        if let s = spend {
+            put(UsageWindow(key: "spend_limit", label: "Spend", kind: .other, usedPercent: s.usedPercent,
+                            resetsAt: s.resetsAt, duration: nil, usedUSD: s.usedUSD, limitUSD: s.limitUSD))
         }
         return ProviderSnapshot(provider: .claude, windows: windows, fetchedAt: at, planLabel: snap?.planLabel)
     }

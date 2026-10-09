@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.0 — 2026-10-09
+
+- **Quieter notifications.** Nothing is sent while the session's terminal or app is in front and you are
+  at the Mac. **Mute** a session from its card. **Quiet hours** (Settings → General) hold back every push.
+- **Background runs** (`claude -p`, `codex exec`, scripts with no terminal) are listed apart, marked
+  *Background*, and never notified, so a night job no longer pings you at 3 a.m.
+- **Sessions you can tell apart.** Untitled sessions are named by their first prompt; Codex sessions use
+  the titles Codex gives its threads; two sessions that would read the same get "· 2".
+- **Answer Claude's questions from the panel** (with panel approvals on): pick an option, Send answer.
+- **Choose the screen:** the notch screen, the main display, or whichever screen the pointer is on.
+- **One-click update:** downloads, verifies the signature and Gatekeeper, swaps the app, relaunches.
+- **Uninstall Aureole…** removes the hooks and status line it added, restores yours, and trashes its data.
+  The README now explains manual cleanup too.
+- **Copy diagnostics** for bug reports (no tokens, prompts or names).
+- **Freshness per provider** in the panel header, amber when a provider's numbers are over ten minutes old.
+- **Extra usage spend** shows when you have any (status line `spend_limit`, or the endpoint's extra usage).
+
 ## 0.4.1 — 2026-10-08
 
 - **Motion that marks news.** A session that has just started waiting sends out a ripple; one that has

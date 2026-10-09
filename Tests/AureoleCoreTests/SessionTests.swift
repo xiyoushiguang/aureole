@@ -233,4 +233,75 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(UsageEvent.sessionWaiting(provider: .claude, name: "首屏", detail: nil, since: since, question: true).title, "🟠 首屏 待你回答")
         XCTAssertEqual(UsageEvent.sessionDone(provider: .claude, name: "文档站", took: 600).title, "✅ 文档站 已完成")
     }
+
+    func testNamesFromFirstPromptAndNumbering() {
+        var a = SessionReducer.apply(event("UserPromptSubmit", ["prompt": "/clear\nFix the refund bug in checkout please"]), to: nil, now: t0)
+        a = SessionReducer.apply(event("UserPromptSubmit", ["prompt": "and also tests"]), to: a, now: t0 + 5)
+        XCTAssertEqual(a.firstPrompt, "Fix the refund bug in check…")   // the first prompt sticks, slash commands skipped
+        var b = AgentSession(provider: .claude, sessionId: "b", cwd: "/x/shop-api", now: t0 + 10)
+        var c = AgentSession(provider: .claude, sessionId: "c", cwd: "/y/shop-api", now: t0 + 20)
+        b.startedAt = t0 + 10; c.startedAt = t0 + 20
+        let names = SessionNames.resolve([a, b, c]) { $0.sessionId == "c" ? nil : nil }
+        XCTAssertEqual(names["abc-123"], "Fix the refund bug in check…")
+        XCTAssertEqual(names["b"], "shop-api")
+        XCTAssertEqual(names["c"], "shop-api · 2")
+        XCTAssertEqual(SessionNames.resolve([b]) { _ in "Title" }["b"], "Title")
+    }
+
+    func testCodexTitlesLaterLineWins() {
+        let text = """
+        {"id":"t1","thread_name":"Old name","updated_at":"x"}
+        {"id":"t2","thread_name":"Other","updated_at":"x"}
+        {"id":"t1","thread_name":"Renamed","updated_at":"y"}
+        """
+        XCTAssertEqual(CodexTitles.titles(inTail: text, ids: ["t1"]), ["t1": "Renamed"])
+    }
+
+    func testQuietHoursWrapPastMidnight() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        func at(_ h: Int, _ m: Int = 0) -> Date { cal.date(from: DateComponents(year: 2026, month: 10, day: 8, hour: h, minute: m))! }
+        let night = QuietHours(start: 23 * 60, end: 7 * 60)
+        XCTAssertTrue(night.contains(at(23, 30), calendar: cal))
+        XCTAssertTrue(night.contains(at(3), calendar: cal))
+        XCTAssertFalse(night.contains(at(7), calendar: cal))
+        XCTAssertFalse(night.contains(at(12), calendar: cal))
+        XCTAssertTrue(QuietHours(start: 60, end: 120).contains(at(1, 30), calendar: cal))
+        XCTAssertFalse(QuietHours(start: 60, end: 60).contains(at(1), calendar: cal))
+    }
+
+    func testHeadlessArguments() {
+        XCTAssertTrue(ProcessTree.isHeadless(arguments: ["claude", "-p", "do it"]))
+        XCTAssertTrue(ProcessTree.isHeadless(arguments: ["/usr/local/bin/claude", "--print", "x"]))
+        XCTAssertTrue(ProcessTree.isHeadless(arguments: ["codex", "exec", "x"]))
+        XCTAssertFalse(ProcessTree.isHeadless(arguments: ["claude", "--resume"]))
+        XCTAssertFalse(ProcessTree.isHeadless(arguments: ["codex"]))
+        XCTAssertFalse(ProcessTree.isHeadless(arguments: ["node", "exec"]))
+        XCTAssertNotNil(ProcessTree.arguments(getpid()))
+    }
+
+    func testBackgroundSessionsAreListedButNeverAnnounced() {
+        var bg = AgentSession(provider: .claude, sessionId: "bg", cwd: "/n", now: t0)
+        bg.background = true
+        bg.turnStartedAt = t0
+        bg.lastEvent = "Stop"
+        bg.set(.idle, at: t0 + 300)
+        bg.updatedAt = t0 + 300
+        let board = SessionBoard.build([bg], now: t0 + 310, alive: { _ in true })
+        XCTAssertEqual(board.background.map(\.sessionId), ["bg"])
+        XCTAssertTrue(board.done.isEmpty)
+        var alerts = SessionAlerts(waitingAfter: 60, announceDone: true)
+        XCTAssertTrue(alerts.check(board, now: t0 + 310, name: { _ in "n" }).isEmpty)
+    }
+
+    func testSilentSessionsAreMarkedNotAnnounced() {
+        var s = AgentSession(provider: .claude, sessionId: "w", cwd: "/n", now: t0)
+        s.set(.waitingPermission, at: t0)
+        s.updatedAt = t0
+        let board = SessionBoard.build([s], now: t0 + 200, alive: { _ in true })
+        var alerts = SessionAlerts(waitingAfter: 60, announceDone: true)
+        XCTAssertTrue(alerts.check(board, now: t0 + 200, name: { _ in "n" }, silent: { _ in true }).isEmpty)
+        // Looking away later does not bring the same wait back.
+        XCTAssertTrue(alerts.check(board, now: t0 + 260, name: { _ in "n" }).isEmpty)
+    }
 }

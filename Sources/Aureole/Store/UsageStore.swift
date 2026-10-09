@@ -219,6 +219,10 @@ final class UsageStore: ObservableObject {
     func dispatch(_ events: [UsageEvent]) {
         guard !events.isEmpty else { return }
         persistSent()
+        if let quiet = settings.quietHours, quiet.contains(Date()) {
+            for event in events { AureoleLog.shared.log("event \(event.kind) held back (quiet hours): \(event.title)") }
+            return
+        }
         for event in events {
             AureoleLog.shared.log("event \(event.kind): \(event.title)")
             if settings.nativeNotifications { NativeNotifier.send(event) }

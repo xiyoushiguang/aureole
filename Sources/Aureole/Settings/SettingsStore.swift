@@ -25,6 +25,24 @@ enum PanelLayout: String, Codable, CaseIterable {
     }
 }
 
+/// Which screen the panel hangs from.
+enum DisplayChoice: String, Codable, CaseIterable {
+    /// The built-in screen with the notch; the main screen when the lid is closed or there is no notch.
+    case notch
+    /// The screen with the menu bar (System Settings → Displays → "main display").
+    case main
+    /// Whichever screen the pointer is on.
+    case mouse
+
+    var displayName: String {
+        switch self {
+        case .notch: return L10n.t("Notch screen")
+        case .main: return L10n.t("Main display")
+        case .mouse: return L10n.t("Screen with the pointer")
+        }
+    }
+}
+
 @MainActor
 final class SettingsStore: ObservableObject {
     private let defaults = UserDefaults.standard
@@ -49,6 +67,13 @@ final class SettingsStore: ObservableObject {
     @Published var approveFromPanelSeconds: Int { didSet { defaults.set(approveFromPanelSeconds, forKey: ApprovalFiles.waitKey) } }
     /// The slow breathing glow and flowing forecast. They make the window server redraw the panel continuously.
     @Published var ambientMotion: Bool { didSet { defaults.set(ambientMotion, forKey: "ambientMotion") } }
+    @Published var displayChoice: DisplayChoice { didSet { defaults.set(displayChoice.rawValue, forKey: "displayChoice") } }
+    /// No pushes (macOS or channels) in these hours; the panel still shows everything.
+    @Published var quietHoursEnabled: Bool { didSet { defaults.set(quietHoursEnabled, forKey: "quietHoursEnabled") } }
+    /// Minutes after midnight.
+    @Published var quietStart: Int { didSet { defaults.set(quietStart, forKey: "quietStart") } }
+    @Published var quietEnd: Int { didSet { defaults.set(quietEnd, forKey: "quietEnd") } }
+    var quietHours: QuietHours? { quietHoursEnabled ? QuietHours(start: quietStart, end: quietEnd) : nil }
     @Published var sessionsEnabled: Bool { didSet { defaults.set(sessionsEnabled, forKey: "sessionsEnabled") } }
     /// The hook helper reads this key too (via the app's defaults domain) to decide whether to keep a prompt excerpt.
     @Published var sessionPromptPreview: Bool { didSet { defaults.set(sessionPromptPreview, forKey: "sessionPromptPreview") } }
@@ -80,6 +105,10 @@ final class SettingsStore: ObservableObject {
         approveFromPanelSeconds = d.object(forKey: ApprovalFiles.waitKey) as? Int ?? 0
         ambientMotion = d.object(forKey: "ambientMotion") as? Bool ?? true
         sessionsEnabled = d.object(forKey: "sessionsEnabled") as? Bool ?? true
+        displayChoice = DisplayChoice(rawValue: d.string(forKey: "displayChoice") ?? "") ?? .notch
+        quietHoursEnabled = d.object(forKey: "quietHoursEnabled") as? Bool ?? false
+        quietStart = d.object(forKey: "quietStart") as? Int ?? 0
+        quietEnd = d.object(forKey: "quietEnd") as? Int ?? 8 * 60
         sessionPromptPreview = d.object(forKey: "sessionPromptPreview") as? Bool ?? true
         if let data = try? Data(contentsOf: channelsURL),
            let decoded = try? JSONDecoder.aureole.decode([ChannelConfig].self, from: data) {

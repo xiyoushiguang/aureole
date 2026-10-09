@@ -71,7 +71,8 @@ public enum ClaudeUsageDecoder {
             let resets = DateParsing.parse(dict["resets_at"])
             let (label, kind, duration) = describe(key: key)
             // Anthropic ships feature-flag windows under codenames with no reset date; they carry no information.
-            if kind == .other, resets == nil { continue }
+            // Extra usage (paid overage) has no reset date either, but it is real money, so it stays.
+            if kind == .other, resets == nil, key != "extra_usage" { continue }
             add(UsageWindow(key: key, label: label, kind: kind, usedPercent: used, resetsAt: resets, duration: duration))
         }
         // Newer structured list: session / weekly_all / weekly_scoped (per model). Fills gaps and adds per-model weeks.

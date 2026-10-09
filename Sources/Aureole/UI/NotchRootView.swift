@@ -222,20 +222,13 @@ struct OpenNotchView: View {
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Theme.amber)
                 }
-                Text(updatedText)
-                    .font(.system(size: 10, weight: .regular).monospacedDigit())
-                    .foregroundStyle(Theme.faint)
+                FreshnessText(store: store, providers: enabledProviders)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, 22)
     }
 
-    private var updatedText: String {
-        guard let t = store.lastRefresh else { return "…" }
-        let s = Int(Date().timeIntervalSince(t))
-        return s < 60 ? L10n.t("just now") : L10n.f("%@ ago", Formatting.countdown(TimeInterval(s)))
-    }
 
     private var footer: some View {
         HStack(spacing: 14) {
@@ -326,8 +319,9 @@ struct ProviderRow: View {
                 parts.append(L10n.t("idle"))
             }
         }
-        let extras = snap.extras.filter { $0.key != "extra_usage" }.map { "\($0.displayLabel) \(Formatting.percent($0.usedPercent))" }
+        let extras = snap.extras.filter { !$0.isSpend }.map { "\($0.displayLabel) \(Formatting.percent($0.usedPercent))" }
         if !extras.isEmpty { parts.append(extras.joined(separator: " · ")) }
+        if let spend = Formatting.spend(snap) { parts.append(spend) }
         // A weekly window that will run out before it resets, at this week's average pace.
         let forecasts = store.weeklyForecasts[provider] ?? [:]
         if let (w, at) = snap.windows.compactMap({ w -> (UsageWindow, Date)? in
@@ -337,6 +331,28 @@ struct ProviderRow: View {
             parts.append(w.displayLabel + " " + L10n.f("runs out %@", HorizonHeadline.when(at, now: Date())))
         }
         return parts.isEmpty ? nil : parts.joined(separator: "   ")
+    }
+}
+
+/// How old each provider's numbers are: "Claude just now · Codex 12m ago". Amber once a provider's numbers are
+/// more than ten minutes old, so a flaky network never passes stale numbers off as current.
+struct FreshnessText: View {
+    @ObservedObject var store: UsageStore
+    let providers: [ProviderID]
+    static let staleAfter: TimeInterval = 10 * 60
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(providers, id: \.self) { id in
+                let at = store.snapshots[id]?.fetchedAt
+                let age = at.map { Date().timeIntervalSince($0) }
+                let stale = (age ?? 0) > Self.staleAfter
+                Text(id.displayName + " " + (at.map { SessionText.ago($0) } ?? "…"))
+                    .foregroundStyle(stale ? Theme.amber : Theme.faint)
+                    .help(stale ? L10n.t("These numbers are old: the last refresh failed or was rate limited. They update by themselves once the connection is back.") : "")
+            }
+        }
+        .font(.system(size: 10, weight: .regular).monospacedDigit())
     }
 }
 

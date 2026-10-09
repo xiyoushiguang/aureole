@@ -71,4 +71,22 @@ final class StatuslineTests: XCTestCase {
         try JSONSerialization.data(withJSONObject: ["command": "/x/aureole-hook --statusline"]).write(to: url)
         XCTAssertNil(StatuslineInstaller.chainedCommand(url: url))   // never call ourselves in a loop
     }
+
+    func testSessionNameAndSpendLimit() throws {
+        let json: [String: Any] = ["session_id": "abc", "session_name": "Fix login",
+                                   "rate_limits": ["spend_limit": ["used_percentage": 42.5, "resets_at": 1_800_000_000,
+                                                                   "used_usd": 21.25, "limit_usd": 50, "period": "monthly"]]]
+        let feed = try XCTUnwrap(StatuslineFeed(json: json, now: Date()))
+        XCTAssertEqual(feed.sessionName, "Fix login")
+        XCTAssertEqual(feed.spend?.usedUSD, 21.25)
+        XCTAssertTrue(feed.hasLimits)
+        let w = try XCTUnwrap(feed.merged(into: nil).windows.first { $0.key == "spend_limit" })
+        XCTAssertEqual(w.usedPercent, 42.5)
+        XCTAssertEqual(w.limitUSD, 50)
+        XCTAssertTrue(w.isSpend)
+        // Older Claude Code: percent only.
+        let bare = StatuslineFeed(json: ["session_id": "x", "rate_limits": ["spend_limit": ["used_percentage": 3]]], now: Date())
+        XCTAssertNil(bare?.spend?.usedUSD)
+        XCTAssertEqual(bare?.spend?.usedPercent, 3)
+    }
 }

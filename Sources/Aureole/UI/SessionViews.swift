@@ -27,6 +27,7 @@ struct TaskList: View {
                     group(L10n.f("Done %d", b.done.count), b.done, color: Theme.done, done: true)
                     group(L10n.f("Working %d", b.working.count), b.working, color: Color.white.opacity(0.62))
                     group(L10n.f("Idle %d", b.idle.count), b.idle, color: Theme.dim)
+                    group(L10n.f("Background %d", b.background.count), b.background, color: Theme.dim)
                 }
                 .animation(.spring(response: 0.45, dampingFraction: 0.86), value: b.all.map { "\($0.id)|\($0.state)" } + b.done.map(\.id))
                 .background(GeometryReader { g in Color.clear.preference(key: TaskListHeightKey.self, value: g.size.height) })

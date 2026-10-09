@@ -37,6 +37,7 @@ enum HorizonColor {
         case .done: return Theme.done
         case .working: return lane.session.provider == .claude ? claudeBright : codexBright
         case .idle: return .white.opacity(0.45)
+        case .background: return .white.opacity(0.3)
         }
     }
 }
@@ -115,7 +116,11 @@ struct HorizonPanel: View {
             if let id = focus, let lane = scene.lanes.first(where: { $0.id == id }) {
                 SessionCard(session: lane.session, name: sessions.name(of: lane.session), context: sessions.context[id],
                             fraction: sessions.contextFraction(id), approval: sessions.approvals[id],
-                            decide: { r, d in sessions.decide(r, d) }, actions: actions)
+                            decide: { r, d in sessions.decide(r, d) },
+                            sendAnswers: { r, a in sessions.answer(r, a) },
+                            muted: sessions.isMuted(lane.session),
+                            toggleMute: { sessions.setMuted(lane.session, !sessions.isMuted(lane.session)) },
+                            actions: actions)
                     .id(id)
                     .frame(width: 318)
                     .onHover { inside in
@@ -500,10 +505,10 @@ struct LaneBackdrop: View {
                 ctx.stroke(bar(x(L.minAngle), nowX, y: y), with: .color(.white.opacity(0.06)), style: StrokeStyle(lineWidth: 8, lineCap: .round))
                 for seg in lane.segments {
                     let p = bar(x(seg.from), x(seg.to), y: y)
-                    let color: Color = lane.role == .idle ? .white.opacity(0.25)
+                    let color: Color = lane.role.quiet ? .white.opacity(0.25)
                         : seg.kind == .waiting ? Theme.amber : Theme.accent(lane.session.provider)
                     ctx.stroke(p, with: .color(color), style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                    if seg.kind == .waiting, lane.role != .idle {
+                    if seg.kind == .waiting, !lane.role.quiet {
                         // A white core tells waiting apart from Claude's similar orange.
                         ctx.stroke(p, with: .color(.white.opacity(0.55)), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                     }
@@ -549,8 +554,9 @@ struct LaneRow: View {
                     HStack(spacing: 8) {
                         Text(name)
                             .font(.system(size: 13, weight: waiting ? .semibold : .medium))
-                            .foregroundStyle(Color.white.opacity(lane.role == .idle ? 0.6 : 0.95))
+                            .foregroundStyle(Color.white.opacity(lane.role.quiet ? 0.6 : 0.95))
                         Spacer(minLength: 8)
+                        if lane.role == .background { BackgroundTag() }
                         if approvable {
                             Text(L10n.t("Approve here"))
                                 .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Theme.amber)
@@ -623,13 +629,13 @@ struct SessionLight: View {
                 Circle().fill(color).frame(width: 15, height: 15)
                 Image(systemName: "checkmark").font(.system(size: 8, weight: .black)).foregroundStyle(HorizonColor.ground)
             } else if lane.session.provider == .codex || context == nil {
-                if lane.role != .idle { Circle().fill(color.opacity(0.6)).frame(width: 16, height: 16).blur(radius: 4) }
+                if !lane.role.quiet { Circle().fill(color.opacity(0.6)).frame(width: 16, height: 16).blur(radius: 4) }
                 Circle().fill(color).frame(width: 11, height: 11)
             } else {
                 Circle().fill(HorizonColor.ground).frame(width: 22, height: 22)
                 Circle().stroke(Color.white.opacity(0.2), lineWidth: 3).frame(width: 22, height: 22)
                 Circle().trim(from: 0, to: context ?? 0)
-                    .stroke(Color.white.opacity(lane.role == .idle ? 0.5 : 1), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .stroke(Color.white.opacity(lane.role.quiet ? 0.5 : 1), style: StrokeStyle(lineWidth: 3, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .frame(width: 22, height: 22)
                 Circle().fill(color).frame(width: 11, height: 11)
@@ -650,9 +656,21 @@ struct SessionLight: View {
                 popped = false
                 withAnimation(.spring(response: 0.38, dampingFraction: 0.45)) { popped = true }
             }
-        case .working, .idle:
+        case .working, .idle, .background:
             break
         }
+    }
+}
+
+/// Marks an unattended run (a script, `claude -p`, `codex exec`): shown, never announced.
+struct BackgroundTag: View {
+    var body: some View {
+        Text(L10n.t("Background"))
+            .font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.dim)
+            .padding(.horizontal, 6).padding(.vertical, 1)
+            .overlay(Capsule().stroke(Theme.dim.opacity(0.6), lineWidth: 1))
+            .fixedSize()
+            .help(L10n.t("Started without a terminal or with -p / exec. Shown here, never notified."))
     }
 }
 
@@ -698,8 +716,14 @@ struct SessionCard: View {
     let fraction: Double?
     var approval: ApprovalRequest?
     var decide: (ApprovalRequest, ApprovalDecision) -> Bool = { _, _ in false }
+    var sendAnswers: (ApprovalRequest, [String: String]) -> Bool = { _, _ in false }
+    var muted = false
+    var toggleMute: () -> Void = {}
+    enum Outcome { case allowed, denied, answered }
     /// The answer just given from this card, kept on screen for a moment so the click is visibly taken.
-    @State private var answered: (decision: ApprovalDecision, reached: Bool)?
+    @State private var answered: (outcome: Outcome, reached: Bool)?
+    /// Picks so far for each question (by question text), before "Send".
+    @State private var picks: [String: [String]] = [:]
     weak var actions: AppActions?
 
     var body: some View {
@@ -718,8 +742,10 @@ struct SessionCard: View {
                 }
             }
             if let a = answered {
-                answeredBlock(a.decision, reached: a.reached)
+                answeredBlock(a.outcome, reached: a.reached)
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
+            } else if let r = approval, let qs = r.questions {
+                questionBlock(r, qs)
             } else if let r = approval {
                 approvalBlock(r)
             } else if let m = s.waitingMessage {
@@ -747,11 +773,23 @@ struct SessionCard: View {
                 .help(L10n.t("Context %% is an estimate (200k or 1M window)."))
             }
             row(L10n.t("Folder"), (s.cwd as NSString).abbreviatingWithTildeInPath)
-            Button { actions?.jump(to: s) } label: {
-                Text(AppNames.jumpLabel(s))
-                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(.black)
-                    .padding(.horizontal, 16).frame(height: 30)
-                    .background(Capsule().fill(Color.white))
+            HStack(spacing: 10) {
+                Button { actions?.jump(to: s) } label: {
+                    Text(AppNames.jumpLabel(s))
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(.black)
+                        .padding(.horizontal, 16).frame(height: 30)
+                        .background(Capsule().fill(Color.white))
+                }
+                Spacer(minLength: 4)
+                if s.background != true {
+                    Button(action: toggleMute) {
+                        Label(muted ? L10n.t("Muted") : L10n.t("Mute"), systemImage: muted ? "bell.slash.fill" : "bell.slash")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(muted ? Theme.amber : HorizonColor.label)
+                    }
+                    .help(muted ? L10n.t("Notifications for this session are off. Click to turn them back on.")
+                                : L10n.t("No more notifications for this session. It stays on the panel."))
+                }
             }
             .buttonStyle(.plain)
         }
@@ -796,15 +834,59 @@ struct SessionCard: View {
 
     private func answer(_ r: ApprovalRequest, _ d: ApprovalDecision) {
         let reached = decide(r, d)
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { answered = (d, reached) }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { answered = (d == .allow ? .allowed : .denied, reached) }
+    }
+
+    /// Claude's question with its options; one pick per question (several for multi-select), then Send.
+    private func questionBlock(_ r: ApprovalRequest, _ qs: [ApprovalRequest.Question]) -> some View {
+        let complete = qs.allSatisfy { !(picks[$0.question] ?? []).isEmpty }
+        return VStack(alignment: .leading, spacing: 10) {
+            ForEach(qs, id: \.question) { q in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(q.question).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                    FlowOptions(options: q.options.map(\.label), help: q.options.map { $0.description ?? "" },
+                                selected: Set(picks[q.question] ?? [])) { label in
+                        var list = picks[q.question] ?? []
+                        if q.multiSelect {
+                            if let i = list.firstIndex(of: label) { list.remove(at: i) } else { list.append(label) }
+                        } else {
+                            list = [label]
+                        }
+                        picks[q.question] = list
+                    }
+                }
+            }
+            HStack(spacing: 8) {
+                Button {
+                    var out: [String: String] = [:]
+                    for q in qs { out[q.question] = (picks[q.question] ?? []).joined(separator: ", ") }
+                    let reached = sendAnswers(r, out)
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { answered = (.answered, reached) }
+                } label: {
+                    Text(L10n.t("Send answer")).font(.system(size: 12, weight: .semibold)).foregroundStyle(.black)
+                        .padding(.horizontal, 14).frame(height: 28)
+                        .background(Capsule().fill(complete ? Theme.amber : Theme.amber.opacity(0.35)))
+                }
+                .disabled(!complete)
+                Spacer(minLength: 4)
+                TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                    Text(L10n.f("Terminal asks in %d s", max(0, Int(r.expires.timeIntervalSince(ctx.date).rounded()))))
+                        .font(.system(size: 10.5).monospacedDigit()).foregroundStyle(HorizonColor.label)
+                }
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     /// "Allowed: Claude carries on" / "Denied" / "Too late: answer in the terminal".
-    private func answeredBlock(_ d: ApprovalDecision, reached: Bool) -> some View {
+    private func answeredBlock(_ o: Outcome, reached: Bool) -> some View {
         let agent = session.provider.displayName
+        let green = Color(red: 0.30, green: 0.80, blue: 0.45)
         let (icon, color, text): (String, Color, String) =
             !reached ? ("exclamationmark.circle.fill", Theme.amber, L10n.t("Too late: the terminal is already asking. Answer it there."))
-            : d == .allow ? ("checkmark.circle.fill", Color(red: 0.30, green: 0.80, blue: 0.45), L10n.f("Allowed. %@ carries on.", agent))
+            : o == .allowed ? ("checkmark.circle.fill", green, L10n.f("Allowed. %@ carries on.", agent))
+            : o == .answered ? ("checkmark.circle.fill", green, L10n.f("Answered. %@ carries on.", agent))
             : ("xmark.circle.fill", Color.white.opacity(0.7), L10n.f("Denied. %@ was told no.", agent))
         return HStack(spacing: 8) {
             Image(systemName: icon).font(.system(size: 16, weight: .semibold)).foregroundStyle(color)
@@ -820,6 +902,59 @@ struct SessionCard: View {
             Text(key).font(.system(size: 11)).foregroundStyle(HorizonColor.label).frame(width: 52, alignment: .leading)
             Text(value).font(mono ? .system(size: 11, design: .monospaced) : .system(size: 11))
                 .foregroundStyle(.white.opacity(0.86)).lineLimit(2)
+        }
+    }
+}
+
+/// Option chips that wrap onto as many lines as they need.
+struct FlowOptions: View {
+    let options: [String]
+    let help: [String]
+    let selected: Set<String>
+    let pick: (String) -> Void
+
+    var body: some View {
+        WrapLayout(spacing: 6) {
+            ForEach(Array(options.enumerated()), id: \.offset) { i, label in
+                let on = selected.contains(label)
+                Button { pick(label) } label: {
+                    Text(label).font(.system(size: 11.5, weight: on ? .semibold : .regular))
+                        .foregroundStyle(on ? .black : .white)
+                        .padding(.horizontal, 10).frame(height: 24)
+                        .background(Capsule().fill(on ? Theme.amber : Color.white.opacity(0.1)))
+                }
+                .buttonStyle(.plain)
+                .help(help[i])
+            }
+        }
+    }
+}
+
+/// Left-to-right layout that starts a new line when the next item does not fit.
+struct WrapLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, row: CGFloat = 0, widest: CGFloat = 0
+        for v in subviews {
+            let s = v.sizeThatFits(.unspecified)
+            if x > 0, x + s.width > width { x = 0; y += row + spacing; row = 0 }
+            x += s.width + spacing
+            row = max(row, s.height)
+            widest = max(widest, x - spacing)
+        }
+        return CGSize(width: min(widest, width), height: y + row)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, row: CGFloat = 0
+        for v in subviews {
+            let s = v.sizeThatFits(.unspecified)
+            if x > bounds.minX, x + s.width > bounds.maxX { x = bounds.minX; y += row + spacing; row = 0 }
+            v.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(s))
+            x += s.width + spacing
+            row = max(row, s.height)
         }
     }
 }
@@ -888,6 +1023,10 @@ struct SideNumber: View {
             } else if let side = inputs.side {
                 Text(side.displayName + " —").font(.system(size: 11.5)).foregroundStyle(HorizonColor.label)
             }
+            if let snap = store.snapshots[inputs.main], let spend = Formatting.spend(snap) {
+                Text(spend).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.amber)
+                    .help(L10n.t("Paid usage beyond your plan, as Claude reports it."))
+            }
             ForEach(weeklyLines, id: \.text) { line in
                 Text(line.text).font(.system(size: 11.5).monospacedDigit())
                     .foregroundStyle(line.warning ? Theme.amber : HorizonColor.label)
@@ -902,7 +1041,7 @@ struct SideNumber: View {
         guard let snap = store.snapshots[inputs.main] else { return [] }
         let forecasts = store.weeklyForecasts[inputs.main] ?? [:]
         return snap.windows.compactMap { w in
-            guard w.key != inputs.window?.key, (w.duration ?? 0) >= Predictor.longWindow, w.key != "extra_usage" else { return nil }
+            guard w.key != inputs.window?.key, (w.duration ?? 0) >= Predictor.longWindow, !w.isSpend else { return nil }
             let p = forecasts[w.key]
             let warning = p?.exhaustsBeforeReset == true
             guard w.kind == .sevenDay || warning else { return nil }

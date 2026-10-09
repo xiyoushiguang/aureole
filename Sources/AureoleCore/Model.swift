@@ -28,15 +28,24 @@ public struct UsageWindow: Codable, Equatable, Identifiable, Sendable {
     public let resetsAt: Date?
     /// Window length in seconds, when known.
     public let duration: TimeInterval?
+    /// Money windows (pay-as-you-go spend): dollars used and the cap, when the provider says.
+    public var usedUSD: Double?
+    public var limitUSD: Double?
 
-    public init(key: String, label: String, kind: WindowKind, usedPercent: Double, resetsAt: Date?, duration: TimeInterval?) {
+    public init(key: String, label: String, kind: WindowKind, usedPercent: Double, resetsAt: Date?, duration: TimeInterval?,
+                usedUSD: Double? = nil, limitUSD: Double? = nil) {
         self.key = key
         self.label = label
         self.kind = kind
         self.usedPercent = usedPercent
         self.resetsAt = resetsAt
         self.duration = duration
+        self.usedUSD = usedUSD
+        self.limitUSD = limitUSD
     }
+
+    /// Spend beyond the plan (Claude's extra usage, or a spend limit set by an admin or gateway).
+    public var isSpend: Bool { key == "extra_usage" || key == "spend_limit" }
 
     public var remainingPercent: Double { max(0, 100 - usedPercent) }
 
