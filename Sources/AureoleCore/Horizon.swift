@@ -135,18 +135,24 @@ public struct HorizonScene: Equatable, Sendable {
     public let ticks: [HorizonTick]
     /// Waiting on you first (longest wait first), then finished-unseen, then working, then idle.
     public let lanes: [HorizonLane]
+    /// Who used this window, when the token ledger can tell; from the window's start, not just what is on screen.
+    public let attribution: QuotaAttribution?
+    /// The usage area split into one band per session (largest first, then "other"), as closed polygons.
+    public let bands: [HorizonBand]
 
     public static func == (a: HorizonScene, b: HorizonScene) -> Bool {
         a.layout == b.layout && a.clock == b.clock && a.window == b.window && a.curve == b.curve && a.lanes == b.lanes
             && a.forecast?.0 == b.forecast?.0 && a.forecast?.1 == b.forecast?.1 && a.dryFrom == b.dryFrom
+            && a.bands == b.bands
     }
 
     public var nowAngle: Double { layout.nowAngle }
     public var sun: CGPoint { layout.point(layout.nowAngle, layout.horizon) }
     public var hundredRadius: Double { layout.radius(percent: 100) }
 
+    /// `weights`: per minute and session, what the main provider's sessions spent (from the token ledger).
     public init(layout: HorizonLayout, now: Date, window: UsageWindow?, samples: [Sample], prediction: Prediction?,
-                sessions: SessionBoard) {
+                sessions: SessionBoard, weights: [Int: [String: Double]]? = nil) {
         self.layout = layout
         self.window = window
         let clock = HorizonClock(layout: layout, now: now, resetsAt: window?.resetsAt)
@@ -175,6 +181,43 @@ public struct HorizonScene: Equatable, Sendable {
         }
         self.curve = curve
         self.current = current
+
+        // Who used it: the same readings from the window's start, split by what each session spent.
+        var attribution: QuotaAttribution?
+        var bands: [HorizonBand] = []
+        if let window, let weights, !weights.isEmpty {
+            let cycle = samples
+                .filter { $0.t < now && $0.t >= (start ?? .distantPast) && Predictor.sameCycle($0.resetsAt, window.resetsAt) }
+                .sorted { $0.t < $1.t }
+            var series: [(t: Date, used: Double)] = []
+            if let s = start, (cycle.first?.t ?? now) > s { series.append((s, 0)) }
+            series += cycle.map { ($0.t, $0.used) }
+            series.append((now, window.usedPercent))
+            attribution = QuotaAttribution.split(curve: series, weights: weights)
+            if let a = attribution {
+                let from = max(clock.start, start ?? clock.start)
+                let visible = a.points.indices.filter { a.points[$0].t >= from }
+                let keys = (a.base >= 0.5 ? [HorizonBand.earlier] : []) + a.bands()
+                if visible.count >= 2 {
+                    let stacks = visible.map { i -> [String: (Double, Double)] in
+                        var d: [String: (Double, Double)] = [HorizonBand.earlier: (0, a.base)]
+                        for part in a.stack(at: i, bands: a.bands()) { d[part.key] = (part.lower, part.upper) }
+                        return d
+                    }
+                    for (rank, key) in keys.enumerated() {
+                        let upper = zip(visible, stacks).map { i, d in
+                            layout.point(clock.angle(a.points[i].t), layout.radius(percent: d[key]?.1 ?? 0))
+                        }
+                        let lower = zip(visible, stacks).reversed().map { i, d in
+                            layout.point(clock.angle(a.points[i].t), layout.radius(percent: d[key]?.0 ?? 0))
+                        }
+                        bands.append(HorizonBand(key: key, rank: rank, polygon: upper + lower))
+                    }
+                }
+            }
+        }
+        self.attribution = attribution
+        self.bands = bands
 
         // Forecast at the current burn rate.
         var forecast: (CGPoint, CGPoint)?
@@ -254,6 +297,15 @@ public struct HorizonScene: Equatable, Sendable {
             return HorizonLane.Segment(from: min(a, b - 0.15), to: b, kind: span.kind)   // a blip still shows
         }
     }
+}
+
+/// One session's share of the usage area, drawn in its own colour.
+public struct HorizonBand: Equatable, Sendable {
+    public static let earlier = "~earlier"
+    /// A session id, `QuotaAttribution.other`, or `earlier` (spent before the readings we can split).
+    public let key: String
+    public let rank: Int
+    public let polygon: [CGPoint]
 }
 
 /// The words at the top left: the conclusion first, then the numbers behind it.

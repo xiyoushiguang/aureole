@@ -119,13 +119,15 @@ struct SessionMeta: View {
     let session: AgentSession
     /// Context used, 0...1.
     let context: Double?
+    /// What it spent and its share of the quota; horizon lanes only.
+    var spend: LaneSpend? = nil
 
     var body: some View {
         let s = session
         let now = Date()
         let quiet = SessionHealth.silence(s, now: now)
         let full = (context ?? 0) >= SessionHealth.contextNearlyFull
-        let base = (s.provider == .codex ? ["Codex"] : []) + [Formatting.countdown(now.timeIntervalSince(s.startedAt))]
+        let base = (s.provider == .codex ? ["Codex"] : s.provider == .task ? [L10n.t("Task")] : []) + [Formatting.countdown(now.timeIntervalSince(s.startedAt))]
         HStack(spacing: 0) {
             Text(base.joined(separator: " · ")).foregroundStyle(Theme.dim)
             if let c = context {
@@ -135,6 +137,13 @@ struct SessionMeta: View {
             }
             if let q = quiet {
                 Text(" · " + L10n.f("quiet %@", Formatting.countdown(q))).foregroundStyle(Theme.amber)
+            }
+            if let p = s.progress {
+                Text(" · \(Int((p * 100).rounded()))%").foregroundStyle(.white.opacity(0.8))
+            }
+            if let spend, let text = SpendText.short(spend) {
+                Text(" · " + text).foregroundStyle(spend.color ?? Theme.dim)
+                    .help(L10n.t("At public API prices. With a subscription this is what the work would have cost, not what you paid."))
             }
         }
         .font(.system(size: 10.5).monospacedDigit())

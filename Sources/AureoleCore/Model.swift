@@ -3,12 +3,18 @@ import Foundation
 /// A usage provider we know how to read. Add a case here to extend Aureole.
 public enum ProviderID: String, Codable, CaseIterable, Identifiable, Sendable {
     case claude, codex
+    /// A lane a script reports through `aureole-hook --lane` (a nightly job, a long build). Has no quota.
+    case task
+
+    /// The providers with a quota to read. `.task` is only ever a lane.
+    public static var allCases: [ProviderID] { [.claude, .codex] }
 
     public var id: String { rawValue }
     public var displayName: String {
         switch self {
         case .claude: return "Claude"
         case .codex: return "Codex"
+        case .task: return L10n.t("Task")
         }
     }
 }

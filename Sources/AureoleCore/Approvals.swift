@@ -4,8 +4,9 @@ import Foundation
 ///
 /// The PermissionRequest hook writes a request file and waits (briefly) for the app to write a decision next
 /// to it. A decision prints `{"hookSpecificOutput": {"decision": {"behavior": "allow"|"deny"}}}`; no decision
-/// in time prints nothing, so the agent shows its own prompt as if Aureole were not there. Only "allow once"
-/// and "deny" exist: no standing rules, nothing approved without a click on a card that shows the full request.
+/// in time prints nothing, so the agent shows its own prompt as if Aureole were not there. "Allow once" and
+/// "deny" always; "always allow" only when Claude Code offers a rule itself (its `permission_suggestions`), and
+/// then exactly that rule, named on the button. Nothing is approved without a click on a card showing the request.
 public struct ApprovalRequest: Codable, Equatable, Identifiable, Sendable {
     /// Unique per request, so a late or stale decision never applies to a different one.
     public var id: String
@@ -19,6 +20,8 @@ public struct ApprovalRequest: Codable, Equatable, Identifiable, Sendable {
     public var expires: Date
     /// Set when Claude is asking a question (AskUserQuestion) instead of asking for permission.
     public var questions: [Question]?
+    /// The standing rule "always allow" would add, in words ("Bash(npm test:*)"); nil when none is offered.
+    public var alwaysRule: String?
 
     public struct Question: Codable, Equatable, Sendable {
         public var question: String
@@ -32,7 +35,7 @@ public struct ApprovalRequest: Codable, Equatable, Identifiable, Sendable {
     }
 
     public init(id: String, sessionId: String, provider: ProviderID, tool: String, full: String, at: Date, expires: Date,
-                questions: [Question]? = nil) {
+                questions: [Question]? = nil, alwaysRule: String? = nil) {
         self.id = id
         self.sessionId = sessionId
         self.provider = provider
@@ -41,6 +44,32 @@ public struct ApprovalRequest: Codable, Equatable, Identifiable, Sendable {
         self.at = at
         self.expires = expires
         self.questions = questions
+        self.alwaysRule = alwaysRule
+    }
+
+    /// Claude Code's suggested permission updates, in words; nil when there are none we can describe.
+    /// Shapes: {"type":"addRules","rules":[{"toolName":"Bash","ruleContent":"npm test:*"}],"behavior":"allow",
+    /// "destination":"localSettings"} and {"type":"setMode","mode":"acceptEdits","destination":"session"}.
+    public static func describe(suggestions: [[String: Any]]?) -> String? {
+        guard let list = suggestions, !list.isEmpty else { return nil }
+        var parts: [String] = []
+        for s in list {
+            switch s["type"] as? String {
+            case "addRules", "replaceRules":
+                guard (s["behavior"] as? String ?? "allow") == "allow" else { return nil }
+                for r in s["rules"] as? [[String: Any]] ?? [] {
+                    guard let tool = r["toolName"] as? String else { continue }
+                    parts.append((r["ruleContent"] as? String).map { "\(tool)(\($0))" } ?? tool)
+                }
+            case "addDirectories":
+                for d in s["directories"] as? [String] ?? [] { parts.append(L10n.f("folder %@", (d as NSString).abbreviatingWithTildeInPath)) }
+            case "setMode":
+                if let m = s["mode"] as? String { parts.append(L10n.f("mode %@", m)) }
+            default:
+                return nil   // something we cannot show plainly is not offered
+            }
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
     }
 
     /// The questions in an AskUserQuestion tool input; nil when there are none with options to pick.
@@ -77,11 +106,17 @@ public struct ApprovalRequest: Codable, Equatable, Identifiable, Sendable {
 
 public enum ApprovalDecision: String, Codable, Sendable {
     case allow, deny
+    /// Allow, and add the rule the agent suggested so it stops asking for this.
+    case always
 
     /// What the hook prints so the agent takes the decision (same shape for Claude Code and Codex).
-    public var hookOutput: String {
-        var decision: [String: Any] = ["behavior": rawValue]
+    public var hookOutput: String { hookOutput(suggestions: nil) }
+
+    /// `suggestions` are the agent's own `permission_suggestions`, handed back unchanged for "always".
+    public func hookOutput(suggestions: [[String: Any]]?) -> String {
+        var decision: [String: Any] = ["behavior": self == .deny ? "deny" : "allow"]
         if self == .deny { decision["message"] = "Denied from Aureole" }
+        if self == .always, let suggestions, !suggestions.isEmpty { decision["updatedPermissions"] = suggestions }
         let obj: [String: Any] = ["hookSpecificOutput": ["hookEventName": "PermissionRequest", "decision": decision]]
         let data = (try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])) ?? Data()
         return String(decoding: data, as: UTF8.self)

@@ -88,6 +88,7 @@ enum AppNames {
 
     /// What clicking a session does, in words for its button.
     static func jumpLabel(_ s: AgentSession) -> String {
+        if s.provider == .task { return L10n.t("Open") }
         if s.tty == nil, s.termProgram == nil, let id = s.bundleId, !KnownApps.isTerminal(id) {
             return L10n.f("Switch to %@", name(id))
         }

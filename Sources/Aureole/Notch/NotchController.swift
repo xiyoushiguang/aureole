@@ -45,14 +45,27 @@ final class NotchController {
     private var cancellables: Set<AnyCancellable> = []
     /// Move to whichever screen the pointer goes to (while closed).
     var followsPointer = false
+    /// Put away with the hot key: nothing is drawn and hovering opens nothing until it is shown again.
+    private(set) var hidden = false
 
-    init(store: UsageStore, sessions: SessionStore, settings: SettingsStore, actions: AppActions) {
+    func toggleHidden() {
+        hidden.toggle()
+        if hidden {
+            setOpen(false)
+            panel.orderOut(nil)
+        } else {
+            panel.orderFrontRegardless()
+        }
+        AureoleLog.shared.log(hidden ? "hidden with the hot key" : "shown with the hot key")
+    }
+
+    init(store: UsageStore, sessions: SessionStore, ledger: LedgerStore, settings: SettingsStore, actions: AppActions) {
         sessions.$board.sink { [weak self] b in
             guard let model = self?.model else { return }
             if model.waitingCount != b.waiting.count { model.waitingCount = b.waiting.count }
             if model.doneCount != b.done.count { model.doneCount = b.done.count }
         }.store(in: &cancellables)
-        let root = NotchRootView(model: model, store: store, sessions: sessions, settings: settings, actions: actions)
+        let root = NotchRootView(model: model, store: store, sessions: sessions, ledger: ledger, settings: settings, actions: actions)
         let host = NSHostingView(rootView: root)
         host.wantsLayer = true
         host.layer?.backgroundColor = NSColor.clear.cgColor
@@ -67,7 +80,7 @@ final class NotchController {
     func attach(to screen: NSScreen?) {
         model.geometry = NotchGeometry.detect(on: screen)
         layout()
-        panel.orderFrontRegardless()
+        if !hidden { panel.orderFrontRegardless() }
     }
 
     private func layout() {
@@ -114,6 +127,7 @@ final class NotchController {
     }
 
     private func mouseMoved(to point: NSPoint) {
+        if hidden { return }
         if followsPointer, !model.isOpen, !model.geometry.screenFrame.contains(point),
            let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) {
             attach(to: screen)

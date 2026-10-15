@@ -8,6 +8,8 @@ enum Theme {
     static let red = Color(red: 1.00, green: 0.38, blue: 0.36)
     /// A session finished a task you have not looked at.
     static let done = Color(red: 0.55, green: 0.72, blue: 1.00)
+    /// Lanes reported by scripts.
+    static let task = Color(red: 0.72, green: 0.62, blue: 1.00)
     static let dim = Color.white.opacity(0.42)
     static let faint = Color.white.opacity(0.22)
 
@@ -15,6 +17,7 @@ enum Theme {
         switch p {
         case .claude: return claude
         case .codex: return codex
+        case .task: return task
         }
     }
 

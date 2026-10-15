@@ -31,11 +31,28 @@ enum HorizonColor {
     static let ground = Color(hex: 0x03040A)
     static let nowLine = Color.white.opacity(0.55)
 
+    /// One colour per session in the "who used it" bands, largest share first; kept clear of Claude's orange,
+    /// Codex's teal and the amber that means "waiting".
+    static let bandPalette: [Color] = [Color(hex: 0x6FA0FF), Color(hex: 0xB98AFF), Color(hex: 0xFF7FB0), Color(hex: 0xB5E86A)]
+
+    /// The colour of a session's band, or nil when it has none of its own (not among the largest few).
+    static func band(_ key: String, in attribution: QuotaAttribution?) -> Color? {
+        if key == QuotaAttribution.other { return .white.opacity(0.28) }
+        if key == HorizonBand.earlier { return .white.opacity(0.10) }
+        guard let i = attribution?.order.firstIndex(of: key), i < bandPalette.count else { return nil }
+        return bandPalette[i]
+    }
+
     static func dot(_ lane: HorizonLane) -> Color {
         switch lane.role {
         case .waiting: return Theme.amber
         case .done: return Theme.done
-        case .working: return lane.session.provider == .claude ? claudeBright : codexBright
+        case .working:
+            switch lane.session.provider {
+            case .claude: return claudeBright
+            case .codex: return codexBright
+            case .task: return Theme.task
+            }
         case .idle: return .white.opacity(0.45)
         case .background: return .white.opacity(0.3)
         }
@@ -55,6 +72,7 @@ extension Color {
 struct HorizonPanel: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var sessions: SessionStore
+    @ObservedObject var ledger: LedgerStore
     @ObservedObject var settings: SettingsStore
     let width: CGFloat
     /// Room left for the lanes before they scroll.
@@ -82,18 +100,19 @@ struct HorizonPanel: View {
     private func content(now: Date) -> some View {
         let inputs = HorizonInputs(store: store, settings: settings)
         let board = settings.sessionsEnabled ? sessions.board : SessionBoard()
+        let weights = attributionWeights(inputs, now: now)
         let scene = HorizonScene(layout: .band, now: now, window: inputs.window, samples: inputs.samples,
-                                 prediction: inputs.prediction, sessions: board)
+                                 prediction: inputs.prediction, sessions: board, weights: weights)
         let s = width / scene.layout.width
         VStack(spacing: 0) {
             ZStack(alignment: .topLeading) {
-                HorizonArc(inputs: inputs, now: now, board: board, used: inputs.window?.usedPercent ?? 0,
+                HorizonArc(inputs: inputs, now: now, board: board, weights: weights, used: inputs.window?.usedPercent ?? 0,
                            ambient: settings.ambientMotion && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
                     .animation(.easeInOut(duration: 0.9), value: inputs.window?.usedPercent)
                 HStack(alignment: .top, spacing: 16) {
                     // The waiting capsule sits under the conclusion, in the sky left of "now", which is otherwise empty.
                     VStack(alignment: .leading, spacing: 12) {
-                        HorizonHeadlineView(inputs: inputs, store: store)
+                        HorizonHeadlineView(inputs: inputs, store: store, windowCost: windowCost(inputs, now: now))
                         if !board.waiting.isEmpty {
                             WaitingCapsule(waiting: board.waiting, name: sessions.name(of:), actions: actions)
                         }
@@ -104,6 +123,13 @@ struct HorizonPanel: View {
                 .padding(.horizontal, 28).padding(.top, 8)
             }
             .frame(width: width, height: scene.layout.height * s)
+            // Who used it sits on the planet's dark side, under the bands it explains and above the lanes.
+            .overlay(alignment: .bottomLeading) {
+                if let a = scene.attribution {
+                    AttributionLegend(attribution: a, name: legendName)
+                        .padding(.leading, 28).padding(.bottom, 6)
+                }
+            }
 
             lanes(scene, scale: s)
             footer
@@ -115,7 +141,9 @@ struct HorizonPanel: View {
         .overlay(alignment: .topTrailing) {
             if let id = focus, let lane = scene.lanes.first(where: { $0.id == id }) {
                 SessionCard(session: lane.session, name: sessions.name(of: lane.session), context: sessions.context[id],
-                            fraction: sessions.contextFraction(id), approval: sessions.approvals[id],
+                            fraction: sessions.contextFraction(id),
+                            spend: LaneSpend(lane: lane, scene: scene, total: ledger.total(session: id)),
+                            approval: sessions.approvals[id],
                             decide: { r, d in sessions.decide(r, d) },
                             sendAnswers: { r, a in sessions.answer(r, a) },
                             muted: sessions.isMuted(lane.session),
@@ -132,6 +160,25 @@ struct HorizonPanel: View {
             }
         }
         .animation(.easeOut(duration: 0.15), value: focus)
+    }
+
+    /// What each session of the main provider spent per minute since the window began; nil until the ledger has read.
+    private func attributionWeights(_ inputs: HorizonInputs, now: Date) -> [Int: [String: Double]]? {
+        guard ledger.ready, let w = inputs.window else { return nil }
+        let from = w.resetsAt.flatMap { r in w.duration.map { r.addingTimeInterval(-$0) } } ?? now.addingTimeInterval(-6 * 3600)
+        let weights = ledger.ledger.weights(provider: inputs.main, from: from)
+        return weights.isEmpty ? nil : weights
+    }
+
+    /// The window so far at API prices.
+    private func windowCost(_ inputs: HorizonInputs, now: Date) -> Double? {
+        guard ledger.ready, let w = inputs.window, let r = w.resetsAt, let d = w.duration else { return nil }
+        return ledger.cost(inputs.main, since: r.addingTimeInterval(-d))
+    }
+
+    private func legendName(_ id: String) -> String {
+        if let s = sessions.sessions.first(where: { $0.sessionId == id }) { return sessions.name(of: s) }
+        return ledger.name(of: id) ?? String(id.prefix(8))
     }
 
     private func laneHover(_ id: String, _ inside: Bool) {
@@ -173,6 +220,7 @@ struct HorizonPanel: View {
                     ForEach(scene.lanes) { lane in
                         LaneRow(scene: scene, lane: lane, scale: s, name: sessions.name(of: lane.session),
                                 context: sessions.context[lane.id], fraction: sessions.contextFraction(lane.id),
+                                spend: LaneSpend(lane: lane, scene: scene, total: ledger.total(session: lane.id)),
                                 approvable: sessions.approvals[lane.id] != nil, actions: actions, onHover: { laneHover(lane.id, $0) })
                             .frame(height: Self.laneHeight)
                             .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
@@ -232,6 +280,7 @@ struct HorizonArc: View, Animatable {
     let inputs: HorizonInputs
     let now: Date
     let board: SessionBoard
+    var weights: [Int: [String: Double]]?
     var used: Double
     /// Breathing glow and flowing forecast on; off for Reduce Motion or by choice.
     var ambient = true
@@ -243,7 +292,7 @@ struct HorizonArc: View, Animatable {
 
     var body: some View {
         let scene = HorizonScene(layout: .band, now: now, window: window(used), samples: inputs.samples,
-                                 prediction: inputs.prediction, sessions: board)
+                                 prediction: inputs.prediction, sessions: board, weights: weights)
         ZStack {
             HorizonCanvas(scene: scene, layer: .sky)
             // The lit stretch breathes slowly: usage is being spent. The blurred glow is rendered once into a
@@ -396,13 +445,24 @@ struct HorizonCanvas: View {
                  with: .linearGradient(Gradient(colors: [Color(hex: 0x080B18), HorizonColor.ground]),
                                        startPoint: CGPoint(x: 0, y: L.point(0, H).y), endPoint: CGPoint(x: 0, y: L.height)))
 
-        // Usage so far, filled down to the horizon.
+        // Usage so far, filled down to the horizon: one band per session when the ledger can tell who used it.
         if scene.curve.count >= 2, let first = scene.curve.first {
-            var area = line(scene.curve)
-            area.addLines(L.arc(from: now, to: atan2(first.x - c.x, c.y - first.y) * 180 / .pi, r: H))
-            area.closeSubpath()
-            ctx.fill(area, with: .linearGradient(Gradient(colors: [HorizonColor.claudeBright.opacity(0.55), Theme.claude.opacity(0.10)]),
-                                                 startPoint: CGPoint(x: 0, y: L.point(now, top).y), endPoint: CGPoint(x: 0, y: sun.y)))
+            if scene.bands.isEmpty {
+                var area = line(scene.curve)
+                area.addLines(L.arc(from: now, to: atan2(first.x - c.x, c.y - first.y) * 180 / .pi, r: H))
+                area.closeSubpath()
+                ctx.fill(area, with: .linearGradient(Gradient(colors: [HorizonColor.claudeBright.opacity(0.55), Theme.claude.opacity(0.10)]),
+                                                     startPoint: CGPoint(x: 0, y: L.point(now, top).y), endPoint: CGPoint(x: 0, y: sun.y)))
+            } else {
+                for band in scene.bands {
+                    guard band.polygon.count >= 4, let color = HorizonColor.band(band.key, in: scene.attribution) else { continue }
+                    var p = line(band.polygon)
+                    p.closeSubpath()
+                    ctx.fill(p, with: .color(color.opacity(band.key == QuotaAttribution.other || band.key == HorizonBand.earlier ? 1 : 0.62)))
+                    // A thin seam of night between bands keeps neighbours apart.
+                    ctx.stroke(line(Array(band.polygon.prefix(band.polygon.count / 2))), with: .color(HorizonColor.ground.opacity(0.55)), lineWidth: 0.8)
+                }
+            }
             ctx.stroke(line(scene.curve), with: .color(HorizonColor.claudeBright),
                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
         }
@@ -468,8 +528,12 @@ struct HorizonCanvas: View {
             let dot = CGRect(x: cur.x - 5, y: cur.y - 5, width: 10, height: 10)
             ctx.fill(Path(ellipseIn: dot), with: .color(HorizonColor.claudeBright))
             ctx.stroke(Path(ellipseIn: dot), with: .color(.white), lineWidth: 1.5)
-            label(&ctx, L10n.f("Used %d%%", Int(w.usedPercent.rounded())), at: CGPoint(x: cur.x - 10, y: cur.y - 6),
-                  anchor: .bottomTrailing, size: 10.5, weight: .semibold, color: HorizonColor.claudeBright)
+            // Above-left of the point, unless that would sit on the "Now" pill (high usage): then below-right,
+            // in the empty sky under the forecast rather than on top of the bands.
+            let clash = cur.y - 6 - 14 < box.maxY + 2 && cur.x - 10 > box.minX - 60
+            label(&ctx, L10n.f("Used %d%%", Int(w.usedPercent.rounded())),
+                  at: clash ? CGPoint(x: cur.x + 10, y: cur.y + 8) : CGPoint(x: cur.x - 10, y: cur.y - 6),
+                  anchor: clash ? .topLeading : .bottomTrailing, size: 10.5, weight: .semibold, color: HorizonColor.claudeBright)
         }
     }
 }
@@ -531,6 +595,8 @@ struct LaneRow: View {
     let context: Int?
     /// Context used, 0...1: reported by the status line when installed, else estimated from `context`.
     let fraction: Double?
+    /// What it spent, and its share of the quota on the horizon.
+    var spend: LaneSpend?
     /// A permission request can be answered from this lane's card.
     var approvable = false
     weak var actions: AppActions?
@@ -552,6 +618,9 @@ struct LaneRow: View {
                     .position(x: nowX, y: HorizonPanel.laneHeight / 2)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
+                        if let c = spend?.color {
+                            RoundedRectangle(cornerRadius: 2).fill(c).frame(width: 8, height: 8)
+                        }
                         Text(name)
                             .font(.system(size: 13, weight: waiting ? .semibold : .medium))
                             .foregroundStyle(Color.white.opacity(lane.role.quiet ? 0.6 : 0.95))
@@ -571,7 +640,7 @@ struct LaneRow: View {
                             .font(waiting ? .system(size: 11, design: .monospaced) : .system(size: 11))
                             .foregroundStyle(waiting ? Theme.amber.opacity(0.9) : Theme.dim)
                         Spacer(minLength: 8)
-                        SessionMeta(session: s, context: fraction)
+                        SessionMeta(session: s, context: fraction, spend: spend)
                     }
                 }
                 .lineLimit(1)
@@ -590,7 +659,7 @@ struct LaneRow: View {
             return s.waitingMessage ?? s.lastDetail ?? L10n.t("Waiting on you")
         case .working:
             if let t = s.lastTool { return [t, s.lastDetail].compactMap { $0 }.joined(separator: " · ") }
-            return L10n.t("thinking")
+            return L10n.t(s.provider == .task ? "running" : "thinking")
         case .idle, .ended:
             return s.promptPreview.map { L10n.f("Last: %@", $0) } ?? (s.cwd as NSString).abbreviatingWithTildeInPath
         }
@@ -714,12 +783,13 @@ struct SessionCard: View {
     let name: String
     let context: Int?
     let fraction: Double?
+    var spend: LaneSpend?
     var approval: ApprovalRequest?
     var decide: (ApprovalRequest, ApprovalDecision) -> Bool = { _, _ in false }
     var sendAnswers: (ApprovalRequest, [String: String]) -> Bool = { _, _ in false }
     var muted = false
     var toggleMute: () -> Void = {}
-    enum Outcome { case allowed, denied, answered }
+    enum Outcome { case allowed, always, denied, answered }
     /// The answer just given from this card, kept on screen for a moment so the click is visibly taken.
     @State private var answered: (outcome: Outcome, reached: Bool)?
     /// Picks so far for each question (by question text), before "Send".
@@ -772,13 +842,20 @@ struct SessionCard: View {
                 }
                 .help(L10n.t("Context %% is an estimate (200k or 1M window)."))
             }
-            row(L10n.t("Folder"), (s.cwd as NSString).abbreviatingWithTildeInPath)
+            if let t = spend?.total {
+                row(L10n.t("Tokens"), SpendText.tokens(t))
+                    .help(L10n.t("At public API prices. With a subscription this is what the work would have cost, not what you paid."))
+            }
+            if s.provider != .task { row(L10n.t("Folder"), (s.cwd as NSString).abbreviatingWithTildeInPath) }
             HStack(spacing: 10) {
-                Button { actions?.jump(to: s) } label: {
-                    Text(AppNames.jumpLabel(s))
-                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(.black)
-                        .padding(.horizontal, 16).frame(height: 30)
-                        .background(Capsule().fill(Color.white))
+                // A script's lane has somewhere to go only if it named one.
+                if s.provider != .task || s.openTarget != nil {
+                    Button { actions?.jump(to: s) } label: {
+                        Text(AppNames.jumpLabel(s))
+                            .font(.system(size: 12, weight: .semibold)).foregroundStyle(.black)
+                            .padding(.horizontal, 16).frame(height: 30)
+                            .background(Capsule().fill(Color.white))
+                    }
                 }
                 Spacer(minLength: 4)
                 if s.background != true {
@@ -829,12 +906,26 @@ struct SessionCard: View {
                 }
             }
             .buttonStyle(.plain)
+            if let rule = r.alwaysRule {
+                // Only the rule the agent itself offered, named in full, so "always" never means more than it says.
+                Button { answer(r, .always) } label: {
+                    HStack(spacing: 6) {
+                        Text(L10n.t("Always allow")).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Theme.amber)
+                        Text(rule).font(.system(size: 11, design: .monospaced)).foregroundStyle(.white.opacity(0.8))
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                    .padding(.horizontal, 12).frame(height: 26)
+                    .overlay(Capsule().stroke(Theme.amber.opacity(0.6), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .help(L10n.f("Allows this now and adds the rule %@ to Claude Code's permissions, as its own prompt would.", rule))
+            }
         }
     }
 
     private func answer(_ r: ApprovalRequest, _ d: ApprovalDecision) {
         let reached = decide(r, d)
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { answered = (d == .allow ? .allowed : .denied, reached) }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { answered = (d == .allow ? .allowed : d == .always ? .always : .denied, reached) }
     }
 
     /// Claude's question with its options; one pick per question (several for multi-select), then Send.
@@ -886,6 +977,7 @@ struct SessionCard: View {
         let (icon, color, text): (String, Color, String) =
             !reached ? ("exclamationmark.circle.fill", Theme.amber, L10n.t("Too late: the terminal is already asking. Answer it there."))
             : o == .allowed ? ("checkmark.circle.fill", green, L10n.f("Allowed. %@ carries on.", agent))
+            : o == .always ? ("checkmark.circle.fill", green, L10n.f("Allowed, and from now on without asking. %@ carries on.", agent))
             : o == .answered ? ("checkmark.circle.fill", green, L10n.f("Answered. %@ carries on.", agent))
             : ("xmark.circle.fill", Color.white.opacity(0.7), L10n.f("Denied. %@ was told no.", agent))
         return HStack(spacing: 8) {
@@ -965,6 +1057,8 @@ struct WrapLayout: Layout {
 struct HorizonHeadlineView: View {
     let inputs: HorizonInputs
     @ObservedObject var store: UsageStore
+    /// The window so far at API prices.
+    var windowCost: Double?
 
     var body: some View {
         let h = HorizonHeadline(provider: inputs.main, window: inputs.window, prediction: inputs.prediction)
@@ -981,10 +1075,12 @@ struct HorizonHeadlineView: View {
                 .font(.system(size: h.tone == .warning ? 32 : 24, weight: .bold).monospacedDigit())
                 .foregroundStyle(color)
             if let sub = h.subtitle {
-                Text(sub).font(.system(size: 12.5).monospacedDigit()).foregroundStyle(.white.opacity(0.86))
+                // The numbers line carries the window's API-price value; it is the subtitle when all is fine.
+                Text(sub + (h.detail == nil ? costSuffix : "")).font(.system(size: 12.5).monospacedDigit()).foregroundStyle(.white.opacity(0.86))
             }
             if let d = h.detail {
-                Text(d).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(HorizonColor.label)
+                Text(d + costSuffix).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(HorizonColor.label)
+                    .help(windowCost == nil ? "" : L10n.t("At public API prices. With a subscription this is what the work would have cost, not what you paid."))
             }
             if inputs.window == nil || status.message != nil {
                 Text(placeholder(status)).font(.system(size: 11))
@@ -992,6 +1088,12 @@ struct HorizonHeadlineView: View {
             }
         }
         .lineLimit(1)
+    }
+
+    /// " · ≈$22 at API prices", or nothing.
+    private var costSuffix: String {
+        guard let c = windowCost, c >= 0.01 else { return "" }
+        return " · " + L10n.f("≈%@ at API prices", Pricing.short(c))
     }
 
     private func placeholder(_ status: ProviderStatus) -> String {

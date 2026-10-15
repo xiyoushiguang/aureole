@@ -49,6 +49,9 @@ public struct AgentSession: Codable, Equatable, Identifiable, Sendable {
     public var recent: [SessionActivity]?
     /// Working and waiting stretches over the last few hours, oldest first; the last one may still be open.
     public var spans: [SessionSpan]?
+    /// Task lanes only: how far along (0…1), and what a click opens.
+    public var progress: Double?
+    public var openTarget: String?
 
     public var id: String { sessionId }
     public var projectName: String { (cwd as NSString).lastPathComponent }
@@ -120,6 +123,8 @@ public struct HookEvent {
     public var notificationType: String?
     public var prompt: String?
     public var reason: String?
+    /// PermissionRequest: the standing rules the agent would add for "always allow".
+    public var permissionSuggestions: [[String: Any]]?
 
     public init?(json: [String: Any]) {
         guard let name = json["hook_event_name"] as? String, let id = json["session_id"] as? String, !id.isEmpty else { return nil }
@@ -134,6 +139,7 @@ public struct HookEvent {
         notificationType = json["notification_type"] as? String
         prompt = json["prompt"] as? String
         reason = json["reason"] as? String
+        permissionSuggestions = json["permission_suggestions"] as? [[String: Any]]
     }
 }
 

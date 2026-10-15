@@ -14,8 +14,10 @@ final class UsageStore: ObservableObject {
     @Published private(set) var lastRefresh: Date?
     @Published private(set) var lastChannelError: String?
 
-    let history = HistoryStore()
+    let history: HistoryStore
     let settings: SettingsStore
+    /// Sample numbers for `--demo` and snapshots: nothing is fetched, saved or sent.
+    private(set) var demo = false
     private var detector = EventDetector()
     private var timer: Timer?
     private var inFlight: Set<ProviderID> = []
@@ -29,8 +31,12 @@ final class UsageStore: ObservableObject {
     private static let snapshotsURL = AureolePaths.appSupport.appendingPathComponent("snapshots.json")
     private var cancellables: Set<AnyCancellable> = []
 
-    init(settings: SettingsStore) {
+    init(settings: SettingsStore, demo: Bool = false) {
         self.settings = settings
+        self.demo = demo
+        history = demo ? HistoryStore(url: FileManager.default.temporaryDirectory.appendingPathComponent("aureole-demo-\(UUID().uuidString).json"))
+                       : HistoryStore()
+        guard !demo else { return }
         let sent = (try? Data(contentsOf: Self.sentURL)).flatMap { try? JSONDecoder().decode([String: Double].self, from: $0) } ?? [:]
         detector = EventDetector(thresholds: [settings.thresholdWarn, settings.thresholdCritical], sent: sent)
         // Show the last known numbers immediately instead of "Loading…", and don't hammer the endpoints on a quick relaunch.
@@ -49,7 +55,25 @@ final class UsageStore: ObservableObject {
         }.store(in: &cancellables)
     }
 
+    /// Shows fixed numbers with their history, as if they had been read; for `--demo` and snapshots.
+    func loadDemo(_ history: [ProviderSnapshot]) {
+        for snap in history.sorted(by: { $0.fetchedAt < $1.fetchedAt }) { self.history.append(snap) }
+        for id in ProviderID.allCases {
+            guard let snap = history.filter({ $0.provider == id }).max(by: { $0.fetchedAt < $1.fetchedAt }) else { continue }
+            snapshots[id] = snap
+            status[id] = .ok
+            lastRefresh = snap.fetchedAt
+            if let primary = snap.primary {
+                predictions[id] = Predictor.forecast(primary, samples: self.history.samples(provider: id, key: primary.key), now: snap.fetchedAt)
+            }
+            var weekly: [String: Prediction] = [:]
+            for w in snap.windows { if let p = Predictor.windowPace(w, now: snap.fetchedAt) { weekly[w.key] = p } }
+            weeklyForecasts[id] = weekly
+        }
+    }
+
     func start() {
+        guard !demo else { return }
         for id in ProviderID.allCases where settings.isEnabled(id) {
             if let s = snapshots[id], Date().timeIntervalSince(s.fetchedAt) < 45 {
                 nextDue[id] = s.fetchedAt.addingTimeInterval(45)
@@ -93,7 +117,7 @@ final class UsageStore: ObservableObject {
     private func provider(for id: ProviderID) -> any UsageProvider {
         switch id {
         case .claude: return ClaudeProvider(credentialSource: settings.claudeCredentialSource)
-        case .codex: return CodexProvider()
+        case .codex, .task: return CodexProvider()
         }
     }
 
@@ -217,7 +241,7 @@ final class UsageStore: ObservableObject {
     }
 
     func dispatch(_ events: [UsageEvent]) {
-        guard !events.isEmpty else { return }
+        guard !events.isEmpty, !demo else { return }
         persistSent()
         if let quiet = settings.quietHours, quiet.contains(Date()) {
             for event in events { AureoleLog.shared.log("event \(event.kind) held back (quiet hours): \(event.title)") }

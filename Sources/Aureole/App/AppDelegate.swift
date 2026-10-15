@@ -16,9 +16,11 @@ protocol AppActions: AnyObject {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
-    let settings = SettingsStore()
-    private(set) lazy var store = UsageStore(settings: settings)
+    let launch = LaunchMode.current
+    private(set) lazy var settings = SettingsStore(defaults: launch.isDemo ? LaunchMode.demoDefaults() : .standard)
+    private(set) lazy var store = UsageStore(settings: settings, demo: launch.isDemo)
     private(set) lazy var sessions = SessionStore(settings: settings)
+    let ledger = LedgerStore()
     private var notch: NotchController?
     private var statusItem: StatusItemController?
     private var settingsWindow: NSWindow?
@@ -26,9 +28,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
     private var cancellables: Set<AnyCancellable> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        AureoleLog.shared.log("Aureole \(AureoleInfo.version) launched")
+        if case .snapshot(let dir, let language) = launch {
+            Snapshotter.run(to: dir, language: language)
+            return
+        }
+        AureoleLog.shared.log("Aureole \(AureoleInfo.version) launched" + (launch.isDemo ? " (demo)" : ""))
+        if launch.isDemo { loadDemo() }
         statusItem = StatusItemController(store: store, settings: settings, actions: self)
-        let controller = NotchController(store: store, sessions: sessions, settings: settings, actions: self)
+        let controller = NotchController(store: store, sessions: sessions, ledger: ledger, settings: settings, actions: self)
         notch = controller
         reattach()
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
@@ -41,12 +48,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
         sessions.onEvents = { [weak self] in self?.store.dispatch($0) }
         store.start()
         sessions.start()
+        ledger.start()
+        HotKey.shared.register { [weak self] in self?.notch?.toggleHidden() }
+        if launch.isDemo {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.notch?.setPinnedOpen(true) }
+            return
+        }
         UpdateStore.shared.start { [weak self] in self?.settings.checkUpdates ?? false }
         // Once, on the first launch: walk through sign-ins, hooks and notifications.
         if !UserDefaults.standard.bool(forKey: "welcomeShown") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.openWelcome() }
         }
         installDebugCommands()
+    }
+
+    /// Sample numbers and sessions instead of the real ones (`--demo`).
+    private func loadDemo() {
+        let now = Date()
+        store.loadDemo(DemoData.usage(now: now))
+        let d = DemoData.sessions(now: now)
+        sessions.loadDemo(d.list, titles: d.titles, context: d.context, approvals: d.approvals, now: now)
+        ledger.freeze(DemoData.ledger(now: now))
     }
 
     /// `scripts/dev-cmd.sh open|close|refresh|hooks-install|hooks-remove` posts these; handy for screenshots and tests.

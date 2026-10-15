@@ -50,7 +50,21 @@ final class SessionStore: ObservableObject {
         }.store(in: &cancellables)
     }
 
+    /// Fixed sessions for `--demo` and snapshots: no files are read, watched or removed.
+    private var demo = false
+    func loadDemo(_ list: [AgentSession], titles: [String: String], context: [String: Int], approvals: [ApprovalRequest], now: Date) {
+        demo = true
+        sessions = list
+        board = SessionBoard.build(list, now: now, alive: { _ in true })
+        self.titles = titles
+        self.context = context
+        names = SessionNames.resolve(list) { titles[$0.sessionId] }
+        self.approvals = Dictionary(approvals.map { ($0.sessionId, $0) }, uniquingKeysWith: { a, _ in a })
+        hookStatus = .installed(events: HookInstaller.events.count)
+    }
+
     func start() {
+        guard !demo else { return }
         installHelperIfNeeded()
         refreshHookStatus()
         // Hooks registered by an older version may lack the longer timeouts panel approvals and answers need.
@@ -99,6 +113,7 @@ final class SessionStore: ObservableObject {
     }
 
     func reload() {
+        guard !demo else { return }
         guard settings.sessionsEnabled else {
             if !sessions.isEmpty { sessions = []; board = SessionBoard() }
             return
@@ -388,6 +403,13 @@ enum Presence {
 enum TerminalJumper {
     @MainActor
     static func jump(to s: AgentSession) {
+        if s.provider == .task {
+            // A script's lane opens what the script named, if anything.
+            guard let target = s.openTarget, !target.isEmpty else { return }
+            let url = target.contains("://") ? URL(string: target) : URL(fileURLWithPath: (target as NSString).expandingTildeInPath)
+            if let url { NSWorkspace.shared.open(url) }
+            return
+        }
         if let tty = s.tty, let program = s.termProgram {
             let dev = "/dev/\(tty)"
             switch program {

@@ -45,7 +45,7 @@ enum DisplayChoice: String, Codable, CaseIterable {
 
 @MainActor
 final class SettingsStore: ObservableObject {
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
     private let channelsURL = AureolePaths.appSupport.appendingPathComponent("channels.json")
 
     @Published var refreshInterval: TimeInterval { didSet { defaults.set(refreshInterval, forKey: "refreshInterval") } }
@@ -86,8 +86,10 @@ final class SettingsStore: ObservableObject {
     /// Webhook URLs and tokens live here, in a 0600 file under Application Support, never in UserDefaults.
     @Published var channels: [ChannelConfig] { didSet { saveChannels() } }
 
-    init() {
-        let d = UserDefaults.standard
+    /// `defaults`: the app's own domain normally; a scratch domain for `--demo`, so a demo never changes real settings.
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        let d = defaults
         refreshInterval = d.object(forKey: "refreshInterval") as? TimeInterval ?? 60
         thresholdWarn = d.object(forKey: "thresholdWarn") as? Int ?? 80
         thresholdCritical = d.object(forKey: "thresholdCritical") as? Int ?? 95
@@ -123,6 +125,7 @@ final class SettingsStore: ObservableObject {
         switch id {
         case .claude: return claudeEnabled
         case .codex: return codexEnabled
+        case .task: return sessionsEnabled
         }
     }
 

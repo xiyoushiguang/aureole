@@ -5,6 +5,7 @@ struct NotchRootView: View {
     @ObservedObject var model: NotchViewModel
     @ObservedObject var store: UsageStore
     @ObservedObject var sessions: SessionStore
+    @ObservedObject var ledger: LedgerStore
     @ObservedObject var settings: SettingsStore
     weak var actions: AppActions?
 
@@ -13,7 +14,7 @@ struct NotchRootView: View {
         ZStack(alignment: .top) {
             backdrop
             if model.isOpen {
-                OpenNotchView(model: model, store: store, sessions: sessions, settings: settings, actions: actions)
+                OpenNotchView(model: model, store: store, sessions: sessions, ledger: ledger, settings: settings, actions: actions)
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             } else {
                 ClosedNotchView(model: model, store: store)
@@ -160,6 +161,7 @@ struct OpenNotchView: View {
     @ObservedObject var model: NotchViewModel
     @ObservedObject var store: UsageStore
     @ObservedObject var sessions: SessionStore
+    @ObservedObject var ledger: LedgerStore
     @ObservedObject var settings: SettingsStore
     weak var actions: AppActions?
 
@@ -168,7 +170,7 @@ struct OpenNotchView: View {
         VStack(spacing: 0) {
             header.frame(height: notchH)
             if settings.panelLayout == .horizon {
-                HorizonPanel(store: store, sessions: sessions, settings: settings, width: model.openWidth,
+                HorizonPanel(store: store, sessions: sessions, ledger: ledger, settings: settings, width: model.openWidth,
                              lanesMaxHeight: horizonLanesMax, pinned: model.pinned, actions: actions)
             } else {
                 VStack(spacing: 10) {

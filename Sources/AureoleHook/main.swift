@@ -13,6 +13,7 @@ func main() {
     let args = CommandLine.arguments.dropFirst()
     if args.first == "--version" { print(AureoleInfo.version); return }
     if args.first == StatuslineInstaller.flag { statusline(); return }
+    if args.first == TaskLaneUpdate.flag { lane(Array(args)); return }
 
     // Stdin is small (a few KB); cap it anyway so a runaway tool_input cannot stall the hook.
     let data = FileHandle.standardInput.readData(ofLength: 4 << 20)
@@ -63,15 +64,39 @@ func offerPanelApproval(_ event: HookEvent, session: AgentSession) {
     let seconds = UserDefaults(suiteName: "app.aureole.Aureole")?.integer(forKey: ApprovalFiles.waitKey) ?? 0
     guard seconds > 0, let tool = event.toolName else { return }
     let now = Date()
+    let suggestions = event.permissionSuggestions
     let request = ApprovalRequest(id: event.toolUseId ?? UUID().uuidString, sessionId: event.sessionId,
                                   provider: session.provider, tool: tool,
                                   full: ApprovalRequest.fullText(tool: tool, input: event.toolInput),
-                                  at: now, expires: now.addingTimeInterval(TimeInterval(min(seconds, 60))))
+                                  at: now, expires: now.addingTimeInterval(TimeInterval(min(seconds, 60))),
+                                  alwaysRule: ApprovalRequest.describe(suggestions: suggestions))
     guard (try? ApprovalFiles.save(request)) != nil else { return }
     let decision = ApprovalFiles.wait(for: request.id, until: request.expires)
     ApprovalFiles.remove(request.id)
     if let decision {
-        FileHandle.standardOutput.write(Data(decision.hookOutput.utf8))
+        FileHandle.standardOutput.write(Data(decision.hookOutput(suggestions: suggestions).utf8))
+    }
+}
+
+/// `--lane <id> …`: a script reports its own lane. Unlike the hooks, a mistake here prints why and exits 2.
+func lane(_ args: [String]) {
+    switch TaskLaneUpdate.parse(args) {
+    case .failure(.usage(let why)):
+        FileHandle.standardError.write(Data(("aureole-hook: \(why)\n" + """
+            usage: aureole-hook --lane <id> [--state working|waiting|done|idle|end] [--name text] [--detail text]
+                                [--progress 0..1|N%] [--open path-or-url] [--pid n]
+
+            """).utf8))
+        exit(2)
+    case .success(var update):
+        // Follow the script that called us, so its lane leaves when it does.
+        if update.pid == nil, SessionFiles.load(SessionFiles.url(for: update.sessionId)) == nil { update.pid = getppid() }
+        let url = SessionFiles.url(for: update.sessionId)
+        guard let s = update.apply(to: SessionFiles.load(url), now: Date()) else {
+            try? FileManager.default.removeItem(at: url)
+            return
+        }
+        try? SessionFiles.save(s)
     }
 }
 
