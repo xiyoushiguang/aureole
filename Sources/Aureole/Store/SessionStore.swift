@@ -126,7 +126,7 @@ final class SessionStore: ObservableObject {
         let all = SessionFiles.loadAll(in: directory)
         var live: [AgentSession] = []
         for s in all {
-            let alive = Self.isAlive(s)
+            let alive = Self.isAlive(s) || TaskLaneUpdate.keepsAfterExit(s, now: now)
             // A dead agent or a file nobody touched for hours is history; drop the file so the folder stays small.
             if !alive || now.timeIntervalSince(s.updatedAt) > SessionBoard.staleAfter {
                 try? FileManager.default.removeItem(at: SessionFiles.url(for: s.sessionId, in: directory))

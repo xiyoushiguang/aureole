@@ -133,3 +133,54 @@ final class AlwaysLabelTests: XCTestCase {
         XCTAssertEqual(ApprovalRequest.describe(suggestions: saved), "Bash(npm test:*)")
     }
 }
+
+final class BugScanFixTests: XCTestCase {
+    func testResumedCodexRolloutInOldFolderIsScanned() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let old = root.appendingPathComponent("2026/09/01")
+        try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+        let file = old.appendingPathComponent("rollout-2026-09-01T10-00-00-01a00000-0000-7000-8000-000000000001.jsonl")
+        try Data("{}\n".utf8).write(to: file)                    // touched now: the thread was resumed today
+        let none = root.appendingPathComponent("none")
+        let now = Date()
+        func sources(_ known: Set<String>) -> [LedgerScanner.Source] {
+            LedgerScanner.sources(now: now, claudeRoot: none, codexRoot: root, geminiRoot: none, opencodeRoot: none, known: known)
+        }
+        XCTAssertTrue(sources([]).isEmpty)                         // the day folders scanned are only the recent ones
+        let found = sources([file.path])
+        XCTAssertEqual(found.map(\.session), ["01a00000-0000-7000-8000-000000000001"])
+        XCTAssertEqual(found.first?.provider, .codex)
+        // An old file nobody touched stays out.
+        try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-20 * 86400)], ofItemAtPath: file.path)
+        XCTAssertTrue(sources([file.path]).isEmpty)
+    }
+
+    func testBackfillKeepsDaysWhoseFilesAreGone() {
+        var old = TokenLedger()
+        old.days["claude|2026-08-01"] = LedgerDay(provider: .claude, day: "2026-08-01", tally: TokenTally(input: 500), cost: 5, unpriced: 0)
+        old.days["claude|2026-10-01"] = LedgerDay(provider: .claude, day: "2026-10-01", tally: TokenTally(input: 100), cost: 1, unpriced: 0)
+        var fresh = TokenLedger()
+        fresh.days["claude|2026-10-01"] = LedgerDay(provider: .claude, day: "2026-10-01", tally: TokenTally(input: 300), cost: 3, unpriced: 0)
+        fresh.keepHistory(from: old)
+        XCTAssertEqual(fresh.days["claude|2026-08-01"]?.cost, 5)   // files gone: the old total stays
+        XCTAssertEqual(fresh.days["claude|2026-10-01"]?.cost, 3)   // re-read: the fuller reading wins
+        XCTAssertEqual(LedgerDay(provider: .codex, day: "2026-10-01", tally: TokenTally(), cost: 0, unpriced: 0).id, "codex|2026-10-01")
+    }
+
+    func testDoneScriptLaneOutlivesItsProcess() {
+        let t0 = Date()
+        let s = TaskLaneUpdate(id: "nightly", state: .working).apply(to: nil, now: t0)!
+        let done = TaskLaneUpdate(id: "nightly", state: .done).apply(to: s, now: t0.addingTimeInterval(120))!
+        XCTAssertTrue(TaskLaneUpdate.keepsAfterExit(done, now: t0.addingTimeInterval(300)))
+        XCTAssertFalse(TaskLaneUpdate.keepsAfterExit(done, now: t0.addingTimeInterval(120 + TaskLaneUpdate.doneLinger + 1)))
+        XCTAssertFalse(TaskLaneUpdate.keepsAfterExit(s, now: t0.addingTimeInterval(10)))     // still working: leaves with the script
+        var claude = done; claude.provider = .claude
+        XCTAssertFalse(TaskLaneUpdate.keepsAfterExit(claude, now: t0.addingTimeInterval(300)))
+    }
+
+    func testLaneIdsWithDotsDoNotCollide() {
+        let dir = URL(fileURLWithPath: "/tmp/x")
+        XCTAssertNotEqual(SessionFiles.url(for: "task-a.b", in: dir), SessionFiles.url(for: "task-ab", in: dir))
+        XCTAssertEqual(SessionFiles.url(for: "../../etc/passwd", in: dir).deletingLastPathComponent().path, "/tmp/x")
+    }
+}

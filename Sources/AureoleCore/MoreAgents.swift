@@ -98,14 +98,24 @@ public enum OpencodePlugin {
           const children = new Set()  // sub-agent sessions: their work belongs to the parent's turn
           const prompts = new Map()   // sessionID -> the last prompt text
           const counted = new Set()   // assistant message ids already logged
-          const send = (event, sessionID, extra = {}) => {
-            if (!sessionID || children.has(sessionID)) return
+          const queues = new Map()    // sessionID -> the previous helper run, so each session's events land in order
+          const run = (payload) => new Promise((done) => {
             try {
               const p = spawn(HELPER, ["\(flag)"], { stdio: ["pipe", "ignore", "ignore"] })
-              p.on("error", () => {})
+              const timer = setTimeout(done, 5000)
+              const finish = () => { clearTimeout(timer); done() }
+              p.on("error", finish)
+              p.on("close", finish)
               p.stdin.on("error", () => {})
-              p.stdin.end(JSON.stringify({ hook_event_name: event, session_id: sessionID, cwd: directory, ...extra }))
-            } catch {}
+              p.stdin.end(payload)
+            } catch { done() }
+          })
+          const send = (event, sessionID, extra = {}) => {
+            if (!sessionID || children.has(sessionID)) return
+            const payload = JSON.stringify({ hook_event_name: event, session_id: sessionID, cwd: directory, ...extra })
+            const next = (queues.get(sessionID) ?? Promise.resolve()).then(() => run(payload))
+            queues.set(sessionID, next)
+            next.then(() => { if (queues.get(sessionID) === next) queues.delete(sessionID) })
           }
           return {
             "chat.message": async (input, output) => {
@@ -153,11 +163,12 @@ public enum OpencodePlugin {
                 case "permission.replied":
                 case "question.replied":
                 case "question.rejected":
-                  send("PostToolUse", p.sessionID)
+                  // Back to work, unless the turn already ended (a rejected question can arrive after idle).
+                  if (busy.get(p.sessionID)) send("PostToolUse", p.sessionID)
                   return
                 case "message.updated": {
                   const m = p.info
-                  if (m?.role !== "assistant" || !m.time?.completed || counted.has(m.id)) return
+                  if (m?.role !== "assistant" || !m.sessionID || !m.time?.completed || counted.has(m.id)) return
                   counted.add(m.id)
                   const t = m.tokens ?? {}
                   const line = { id: m.id, at: m.time.completed, model: m.modelID, provider: m.providerID,

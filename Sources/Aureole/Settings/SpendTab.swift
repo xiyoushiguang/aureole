@@ -23,7 +23,7 @@ struct SpendTab: View {
                 } else if days.isEmpty {
                     Text(L10n.t("No token use found in Claude Code or Codex transcripts yet.")).foregroundStyle(.secondary)
                 } else {
-                    Chart(days, id: \.day) {
+                    Chart(days) {
                         BarMark(x: .value("Day", Self.date($0.day), unit: .day), y: .value("USD", $0.cost))
                             .foregroundStyle(by: .value("Provider", $0.provider.displayName))
                     }

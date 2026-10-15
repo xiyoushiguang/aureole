@@ -336,7 +336,8 @@ public enum SessionFiles {
     }
 
     public static func url(for sessionId: String, in dir: URL = directory) -> URL {
-        let safe = sessionId.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+        // "." is kept so script lanes "a.b" and "ab" stay apart; with no "/" a name cannot leave the folder.
+        let safe = sessionId.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == "." }
         return dir.appendingPathComponent("\(safe).json")
     }
 

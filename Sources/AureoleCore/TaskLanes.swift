@@ -68,6 +68,14 @@ public struct TaskLaneUpdate: Equatable, Sendable {
 
     public enum LaneError: Error, Equatable { case usage(String) }
 
+    /// A script usually reports `done` and exits at once. Its lane outlives it for this long, so the check mark
+    /// shows and the finish is announced; other lanes leave with their process.
+    public static let doneLinger: TimeInterval = 30 * 60
+
+    public static func keepsAfterExit(_ s: AgentSession, now: Date) -> Bool {
+        s.provider == .task && s.state == .idle && s.lastEvent == "Stop" && now.timeIntervalSince(s.stateSince) < doneLinger
+    }
+
     /// The session id lanes are stored under, apart from agents' ids.
     public var sessionId: String { "task-" + id }
 

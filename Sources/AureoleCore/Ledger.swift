@@ -18,13 +18,15 @@ public struct LedgerBucket: Codable, Equatable, Sendable {
 }
 
 /// A provider's use on one calendar day, kept long after the minute buckets are pruned.
-public struct LedgerDay: Codable, Equatable, Sendable {
+public struct LedgerDay: Codable, Equatable, Identifiable, Sendable {
     public var provider: ProviderID
     /// yyyy-MM-dd in the Mac's time zone at the time of the call.
     public var day: String
     public var tally: TokenTally
     public var cost: Double
     public var unpriced: Int
+    /// Two agents share a day, so the day alone does not identify an entry.
+    public var id: String { "\(provider.rawValue)|\(day)" }
     public init(provider: ProviderID, day: String, tally: TokenTally, cost: Double, unpriced: Int) {
         self.provider = provider; self.day = day; self.tally = tally; self.cost = cost; self.unpriced = unpriced
     }
@@ -124,6 +126,16 @@ public struct TokenLedger: Codable, Equatable, Sendable {
     public static let history: TimeInterval = 400 * 86400
 
     public init() { version = Self.currentVersion }
+
+    /// After reading everything again from scratch into `self`, keeps the day totals of `old` that the files on
+    /// disk no longer cover (agents delete old transcripts). For a day both have, the larger reading wins:
+    /// a re-read can only miss files, never count one twice.
+    public mutating func keepHistory(from old: TokenLedger) {
+        for (key, day) in old.days {
+            if let now = days[key], now.tally.total >= day.tally.total { continue }
+            days[key] = day
+        }
+    }
 
     enum CodingKeys: String, CodingKey { case buckets, cursors, titles, folders, days, version }
     public init(from decoder: Decoder) throws {
@@ -240,7 +252,7 @@ public enum LedgerScanner {
     /// Claude transcripts (and their sub-agents', counted to the parent) and Codex rollouts touched within the retention.
     /// With `everything`, all transcripts still on disk within the day-total history (the one-time backfill).
     public static func sources(now: Date = Date(), claudeRoot: URL? = nil, codexRoot: URL? = nil, geminiRoot: URL? = nil,
-                               opencodeRoot: URL? = nil, everything: Bool = false) -> [Source] {
+                               opencodeRoot: URL? = nil, everything: Bool = false, known: Set<String> = []) -> [Source] {
         let fm = FileManager.default
         let cutoff = now.addingTimeInterval(-(everything ? TokenLedger.history : TokenLedger.retention))
         func recent(_ url: URL) -> Bool {
@@ -271,6 +283,14 @@ public enum LedgerScanner {
             for file in list(dir) where file.pathExtension == "jsonl" && recent(file) {
                 out.append(Source(url: file, provider: .codex, session: codexThread(file)))
             }
+        }
+        // A Codex thread resumed later is appended to its rollout in the folder of the day it began, which the
+        // scan above no longer visits. Files already read once are checked wherever they are.
+        let listed = Set(out.map(\.url.path))
+        let codexPrefix = sessions.path.hasSuffix("/") ? sessions.path : sessions.path + "/"
+        for path in known where path.hasPrefix(codexPrefix) && path.hasSuffix(".jsonl") && !listed.contains(path) {
+            let file = URL(fileURLWithPath: path)
+            if recent(file) { out.append(Source(url: file, provider: .codex, session: codexThread(file))) }
         }
         // Gemini CLI: ~/.gemini/tmp/<project>/chats/session-….jsonl, sub-agents in chats/<parent session>/….jsonl.
         // The session id is on the file's first line.

@@ -24,11 +24,20 @@ final class LedgerStore: ObservableObject {
         queue.async { [weak self] in
             var ledger = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder.aureole.decode(TokenLedger.self, from: $0) } ?? TokenLedger()
             // A ledger from before day totals: read everything once more, this time back as far as the files go.
-            let backfill = ledger.version < TokenLedger.currentVersion || ledger.cursors.isEmpty
-            if backfill { ledger = TokenLedger() }
+            // A first run reads back as far as the files go, as does a ledger saved by an older version; the day
+            // totals it already had are kept where the files are gone.
+            let backfill = ledger.version < TokenLedger.currentVersion || (ledger.cursors.isEmpty && ledger.days.isEmpty)
             let started = Date()
-            var changed = LedgerScanner.scan(&ledger, sources: LedgerScanner.sources(everything: backfill))
-            if backfill { changed = true }
+            var changed: Bool
+            if backfill {
+                let old = ledger
+                ledger = TokenLedger()
+                LedgerScanner.scan(&ledger, sources: LedgerScanner.sources(everything: true))
+                ledger.keepHistory(from: old)
+                changed = true
+            } else {
+                changed = LedgerScanner.scan(&ledger, sources: LedgerScanner.sources(known: Set(ledger.cursors.keys)))
+            }
             if changed { Self.save(ledger, to: url) }
             let took = Date().timeIntervalSince(started)
             DispatchQueue.main.async {
@@ -59,7 +68,7 @@ final class LedgerStore: ObservableObject {
         var copy = ledger
         let url = url
         queue.async { [weak self] in
-            let changed = LedgerScanner.scan(&copy, sources: LedgerScanner.sources())
+            let changed = LedgerScanner.scan(&copy, sources: LedgerScanner.sources(known: Set(copy.cursors.keys)))
             if changed { Self.save(copy, to: url) }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {

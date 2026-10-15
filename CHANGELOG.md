@@ -17,6 +17,12 @@
 - The request box on an approval card is as tall as the request, up to 140 pt, instead of always 140.
 - The ServerChan channel is now listed as **WeChat**, with setup steps under it.
 - README: an animated tour (rendered from the demo data), Homebrew install.
+- Fixed: a script lane that reports `done` and exits right away now stays (with its check mark, and
+  announced) for 30 minutes instead of vanishing within seconds.
+- Fixed: lane ids that differ only by a dot (`a.b`, `ab`) no longer share one record.
+- Fixed (new in this version): a Codex thread resumed more than 8 days after it began is counted again;
+  rebuilding the ledger keeps day totals whose transcripts are gone; opencode events reach Aureole in
+  order; the spend chart keeps both agents' bars on a shared day.
 
 ## 0.6.0 — 2026-10-14
 
