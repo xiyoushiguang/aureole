@@ -18,6 +18,8 @@ final class SessionStore: ObservableObject {
     @Published private(set) var hookStatus: HookInstaller.Status = .notInstalled
     @Published private(set) var statuslineInstalled = false
     @Published private(set) var codexHookStatus: HookInstaller.Status = .notInstalled
+    /// Other tools' handlers on the events Aureole answers or announces (Claude Code and Codex), by program name.
+    @Published private(set) var hookNeighbors: [String] = []
     /// Context used (0...1) per session as Claude Code's status line reports it; exact, unlike the token estimate.
     @Published private(set) var contextReported: [String: Double] = [:]
     @Published private(set) var lastError: String?
@@ -278,8 +280,11 @@ final class SessionStore: ObservableObject {
         let current = try? HookInstaller.read()
         hookStatus = current.map { HookInstaller.status(settings: $0) } ?? .notInstalled
         statuslineInstalled = current.map { StatuslineInstaller.isInstalled(settings: $0) } ?? false
-        codexHookStatus = (try? HookInstaller.read(url: HookInstaller.codexHooksURL))
-            .map { HookInstaller.status(settings: $0, events: HookInstaller.codexEvents) } ?? .notInstalled
+        let codex = try? HookInstaller.read(url: HookInstaller.codexHooksURL)
+        codexHookStatus = codex.map { HookInstaller.status(settings: $0, events: HookInstaller.codexEvents) } ?? .notInstalled
+        var neighbors = current.map { HookNeighbors.find(settings: $0) } ?? []
+        for n in codex.map({ HookNeighbors.find(settings: $0) }) ?? [] where !neighbors.contains(n) { neighbors.append(n) }
+        if neighbors != hookNeighbors { hookNeighbors = neighbors }
     }
 
     /// Registers the helper in ~/.codex/hooks.json (same shape as Claude Code's hooks). Codex then asks the

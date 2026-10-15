@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- **Who used the quota.** The usage area on the horizon is split into one band per session, by what each
+  session spent while the curve rose; a legend under the arc and each lane give the share. An estimate,
+  labelled as one; rises with no tokens behind them count as *other*.
+- **API-price value.** A token ledger read from Claude Code transcripts (sub-agents counted to their
+  session) and Codex rollouts, incrementally, about 2 ms a pass: tokens, cache hit rate and the value at
+  public API prices per session (`≈$3.2` on the lane, the full breakdown on its card) and for the window.
+- **Always allow, exactly as offered.** When Claude Code suggests a standing rule for a permission prompt,
+  the card offers **Always allow** with that rule on the button and hands it back unchanged.
+- **Lanes for your scripts.** `aureole-hook --lane <id> --state working|waiting|done|idle|end` puts a
+  nightly job or a long build on the time axis; it leaves when the script exits.
+- **Demo and snapshots.** `scripts/demo.sh` opens the app with sample data; `scripts/snapshot.sh` renders
+  the panel to PNG (English and Chinese) for README pictures and before/after comparisons.
+- **Hide with ⌃⌥⌘A** (or the menu bar item), for screen sharing.
+- **Settings warn about other hooks** on the same events (another app answering permission prompts or
+  announcing finished turns would make alerts arrive twice).
+- The "Used %" label moves clear of the "Now" pill when usage is high.
+
 ## 0.5.0 — 2026-10-09
 
 - **Quieter notifications.** Nothing is sent while the session's terminal or app is in front and you are

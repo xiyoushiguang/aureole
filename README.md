@@ -41,6 +41,16 @@ sun.
 - **Polite polling.** Once a minute while your numbers move, slowing to every five minutes when they don't; obeys `Retry-After` when a vendor asks for a pause, and shows the last known numbers meanwhile.
 - **Reset times** as both a countdown and a clock time: `4h 37m · 00:00`.
 - **Burn rate and forecast.** After a few minutes of samples: `≈12%/h · empty 14:12, before reset`.
+- **Who used it.** The area under the usage curve is split into one coloured band per session, sized by
+  what each session spent while the curve rose. Each lane says its share (`18% of quota`). An estimate:
+  vendors do not say which session used what, so a rise with no tokens behind it counts as *other*.
+- **What it would have cost.** Tokens per session (sub-agents included), cache hit rate, and their value
+  at public API prices: `≈$3.2` on a lane, `≈$21 at API prices` for the window. With a subscription this
+  is what the work was worth, not what you paid. Read from the transcripts Claude Code and Codex keep;
+  nothing is asked of any vendor.
+- **Lanes for your own scripts.** A nightly job or a long build can put itself on the time axis
+  (see [Lanes for your scripts](#lanes-for-your-scripts)).
+- **Hide it** with ⌃⌥⌘A (or the menu bar item) when you share your screen.
 - **Routing hint.** When one provider is nearly drained and the other has headroom, the panel says so.
 - **Alerts where you actually are.** macOS notifications plus Discord, Slack, Telegram, Feishu/Lark,
   DingTalk, WeCom, ntfy, Bark, ServerChan (WeChat), a custom JSON webhook, or a shell script.
@@ -159,12 +169,29 @@ Only Terminal and iTerm2 have been tested on real hardware so far; reports for t
 
 Settings → Sessions → *Approve requests from the panel*. When a session asks for permission, hover it:
 the card shows the full request (the whole command, or the file and the change) with **Allow once**
-and **Deny**. Nothing is allowed without that click, and there is no "always allow". While Aureole
+and **Deny**. When Claude Code itself offers a standing rule (the "don't ask again" of its own prompt),
+the card adds **Always allow** with exactly that rule on the button, e.g. `Bash(npm test:*)`, and hands
+it back to Claude Code unchanged. Nothing is allowed without a click. While Aureole
 waits (15, 30 or 60 seconds, your choice) the terminal prompt is held back; if you do not answer, it
 appears as usual. Works for Claude Code and Codex.
 
 When Claude asks you a question (its multiple-choice prompt), the same card shows the options: pick one
 (or several, where allowed) and **Send answer**. Claude Code only.
+
+### Lanes for your scripts
+
+Any script can report a lane with the hook helper Aureole installs:
+
+```bash
+H=~/Library/Application\ Support/Aureole/aureole-hook
+$H --lane nightly --name "Nightly run" --state working --detail "step 2 of 5" --progress 40%
+$H --lane nightly --state done      # shown with a check, announced like a finished task
+$H --lane nightly --state end       # removes the lane
+```
+
+States: `working`, `waiting` (needs you: amber, announced after a while), `done`, `idle`, `end`.
+`--open <path or URL>` makes a click on the lane open it. The lane follows the script that called the
+helper and leaves when it exits (or pass `--pid`).
 
 ## Privacy
 
@@ -175,6 +202,8 @@ When Claude asks you a question (its multiple-choice prompt), the same card show
 - Notification channel settings (webhook URLs, bot tokens) are stored in
   `~/Library/Application Support/Aureole/channels.json` with `0600` permissions.
 - Usage samples for the burn-rate forecast live in `history.json` next to it, seven days deep.
+- Token counts per session, model and minute live in `ledger.json` (eight days), with how far each
+  transcript has been read. Titles and folders come along; prompts and replies are never stored.
 - `defaults write app.aureole.Aureole debugDump -bool true` saves the raw usage payloads to
   `Application Support/Aureole/debug/` for bug reports. They contain usage numbers and, for Codex,
   your account id and email, never tokens. Off by default.
@@ -186,6 +215,8 @@ swift build            # library + app binary
 swift test             # AureoleCore unit tests
 scripts/run.sh         # debug build, relaunch
 scripts/dev-cmd.sh open|close|refresh   # drive the running app for screenshots
+scripts/demo.sh        # open the app with sample data (no agent or sign-in needed)
+scripts/snapshot.sh    # render the panel with sample data to build/snapshots/*.png
 ```
 
 Layout:

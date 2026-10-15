@@ -70,6 +70,9 @@ struct GeneralTab: View {
                 Text(L10n.t("Nothing is pushed in these hours, to macOS or to any channel. The panel still shows everything."))
                     .font(.caption).foregroundStyle(.secondary)
             }
+            LabeledContent(L10n.t("Hide or show Aureole")) {
+                Text(HotKey.display).font(.system(.body, design: .rounded)).foregroundStyle(.secondary)
+            }
             Toggle(L10n.t("Ambient motion (breathing glow, flowing forecast)"), isOn: $settings.ambientMotion)
             Text(L10n.t("Off automatically when macOS is set to reduce motion."))
                 .font(.caption).foregroundStyle(.secondary)
@@ -182,6 +185,11 @@ struct SessionsTab: View {
                 if let err = sessions.lastError {
                     Text(err).font(.caption).foregroundStyle(.orange)
                 }
+                if !sessions.hookNeighbors.isEmpty {
+                    Label(L10n.f("Other hooks on the same events: %@. If one of them also answers permission prompts or announces finished turns, you may get every alert twice; turn one of them off.",
+                                 sessions.hookNeighbors.joined(separator: ", ")), systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.orange)
+                }
                 Toggle(L10n.t("Keep an 80-character excerpt of each prompt"), isOn: $settings.sessionPromptPreview)
                 Picker(L10n.t("Notify when a session waits"), selection: $settings.notifyWaitingMinutes) {
                     Text(L10n.t("Off")).tag(0)
@@ -193,10 +201,26 @@ struct SessionsTab: View {
                     ForEach([15, 30, 60], id: \.self) { Text(L10n.f("wait up to %d s", $0)).tag($0) }
                 }
                 .onChange(of: settings.approveFromPanelSeconds) { _, v in if v > 0 { sessions.refreshHookTimeouts() } }
-                Text(L10n.t("Hover a waiting session to see the full request and choose Allow once or Deny, or pick an answer when Claude asks a question. Nothing is ever allowed without that click, and there is no \"always allow\". While Aureole waits, the terminal prompt is held back; if you do not answer in time, it appears as usual."))
+                Text(L10n.t("Hover a waiting session to see the full request and choose Allow once or Deny, or pick an answer when Claude asks a question. When Claude Code itself offers a standing rule, \"Always allow\" adds exactly that rule, named on the button. Nothing is ever allowed without a click. While Aureole waits, the terminal prompt is held back; if you do not answer in time, it appears as usual."))
                     .font(.caption).foregroundStyle(.secondary)
                 Text(L10n.t("Uses the same channels as usage alerts (macOS notification, WeChat, etc.)."))
                     .font(.caption).foregroundStyle(.secondary)
+            }
+            Section(L10n.t("Lanes for your own scripts")) {
+                Text(L10n.t("Any script can put a lane on the time axis: a nightly job, a long build, a batch of renders. It leaves when the script exits."))
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(Self.laneExample)
+                    .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                    .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.05)))
+                HStack {
+                    Text(L10n.t("States: working, waiting (needs you), done, idle, end. Optional: --detail, --progress 0.4 or 40%, --open a path or URL.")).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button(L10n.t("Copy")) {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(Self.laneExample, forType: .string)
+                    }
+                }
             }
             Section {
                 Text(L10n.t("Aureole adds a small helper to ~/.claude/settings.json that runs on each hook event and writes one file per session under Application Support (0600): folder, state, the current tool, and an optional prompt excerpt. Nothing leaves this Mac. Your other hooks are kept."))
@@ -205,6 +229,14 @@ struct SessionsTab: View {
         }
         .formStyle(.grouped)
         .onAppear { sessions.refreshHookStatus() }
+    }
+
+    static var laneExample: String {
+        let helper = (SessionStore.helperURL.path as NSString).abbreviatingWithTildeInPath.replacingOccurrences(of: " ", with: "\\ ")
+        return """
+        \(helper) --lane nightly --name "Nightly run" --state working --detail "step 2 of 5" --progress 40%
+        \(helper) --lane nightly --state done
+        """
     }
 
     private var statusText: String {

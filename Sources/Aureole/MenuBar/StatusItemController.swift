@@ -34,6 +34,10 @@ final class StatusItemController: NSObject {
         let menu = NSMenu()
         menu.addItem(withTitle: L10n.t("Show panel"), action: #selector(togglePinned), keyEquivalent: "").target = self
         menu.addItem(withTitle: L10n.t("Refresh now"), action: #selector(refresh), keyEquivalent: "r").target = self
+        // The same as the hot key, for when it slipped your mind.
+        let hide = NSMenuItem(title: L10n.f("Hide or show the notch (%@)", HotKey.display), action: #selector(toggleHidden), keyEquivalent: "")
+        hide.target = self
+        menu.addItem(hide)
         menu.addItem(.separator())
         let login = NSMenuItem(title: L10n.t("Launch at login"), action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         login.target = self
@@ -64,6 +68,7 @@ final class StatusItemController: NSObject {
 
     @objc private func togglePinned() { actions?.togglePinned() }
     @objc private func refresh() { actions?.refreshNow() }
+    @objc private func toggleHidden() { actions?.toggleHidden() }
     @objc private func openSettings() { actions?.openSettings() }
     @objc private func quit() { actions?.quit() }
     @objc private func openUpdate() { UpdateStore.shared.openRelease() }

@@ -9,6 +9,7 @@ protocol AppActions: AnyObject {
     func openSettings()
     func refreshNow()
     func togglePinned()
+    func toggleHidden()
     func jump(to session: AgentSession)
     func openWelcome()
     func quit()
@@ -49,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
         store.start()
         sessions.start()
         ledger.start()
-        HotKey.shared.register { [weak self] in self?.notch?.toggleHidden() }
+        HotKey.shared.register { [weak self] in self?.toggleHidden() }
         if launch.isDemo {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.notch?.setPinnedOpen(true) }
             return
@@ -187,6 +188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
 
     func refreshNow() { store.refreshAll(force: true) }
     func togglePinned() { notch?.togglePinned() }
+    func toggleHidden() { notch?.toggleHidden() }
     func jump(to session: AgentSession) {
         notch?.setPinnedOpen(false)
         sessions.acknowledge(session)

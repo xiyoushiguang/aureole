@@ -33,6 +33,13 @@ Aureole 是一个原生 macOS 小工具：Claude 和 Codex 订阅还剩多少额
 - **克制的刷新。** 数字在变时每分钟一次，不变时放慢到每五分钟；服务端要求暂停（`Retry-After`）时照做，期间显示最后一次的数字。
 - **重置时间**同时给倒计时和钟点：`4小时37分 · 00:00`。
 - **消耗速度和预测。** 采样几分钟后：`≈12%/小时 · 14:12 用完，早于重置`。
+- **谁用的。** 用量曲线下方按会话分成彩色色带，宽度取决于曲线上升时各会话花掉了多少。每条横道写着它的占比（`占额度 18%`）。
+  这是估算：厂商不会告诉你哪个会话用了多少，找不到对应 token 的上升记为「其他」。
+- **按 API 价值多少钱。** 每个会话的 token（含子代理）、缓存命中率，以及按厂商公开 API 价折算的金额：横道上 `≈$3.2`，
+  窗口标题旁 `按 API 价 ≈$21`。订阅用户并没有付这笔钱，这是这些活按 API 计费的价值。数据读自 Claude Code 和 Codex
+  本机保存的对话记录，不向任何厂商发请求。
+- **给自己的脚本加横道。** 夜间任务、长时间编译也能出现在时间轴上（见[给自己的脚本加横道](#给自己的脚本加横道)）。
+- **一键隐藏。** 共享屏幕时按 ⌃⌥⌘A（或用菜单栏图标）把面板藏起来。
 - **分流提示。** 一家快用完、另一家还很空时，面板会提醒你把新任务交给另一家。
 - **在你在的地方提醒。** macOS 通知，以及 Discord、Slack、Telegram、飞书、钉钉、企业微信、ntfy、Bark、
   Server 酱（微信）、自定义 JSON webhook 或 shell 脚本。事件：警告 / 严重阈值、窗口重置、「重置前会用完」预测、登录失效。
@@ -132,10 +139,25 @@ Aureole 复用你已经有的登录状态。它从不索要密码，也从不刷
 ### 在面板里批准（可选）
 
 设置 → 会话 → *在面板里批准请求*。会话请求权限时，把鼠标移到它上面：详情卡会显示完整请求（整条命令，或者要改的文件和内容），
-以及 **允许这一次** 和 **拒绝**。没有你的点击绝不会放行，也没有「总是允许」。Aureole 等待期间（15、30 或 60 秒，可选）终端里的
+以及 **允许这一次** 和 **拒绝**。如果 Claude Code 自己给出了一条长期规则（它弹窗里的「以后不再询问」），卡片上还会多一个 **以后都允许**，按钮上写着规则原文，
+比如 `Bash(npm test:*)`，原样交回给 Claude Code。没有你的点击绝不会放行。Aureole 等待期间（15、30 或 60 秒，可选）终端里的
 确认框会暂缓出现；你没回应，它就照常弹出。Claude Code 和 Codex 都支持。
 
 Claude 向你提问（多选题那种）时，同一张卡片会列出选项：点一个（允许多选时可以点几个），再点 **发送回答**。仅支持 Claude Code。
+
+### 给自己的脚本加横道
+
+任何脚本都可以用 Aureole 装好的辅助程序报告一条横道：
+
+```bash
+H=~/Library/Application\ Support/Aureole/aureole-hook
+$H --lane nightly --name "夜间任务" --state working --detail "第 2 步，共 5 步" --progress 40%
+$H --lane nightly --state done      # 打勾显示，像做完的任务一样提醒一次
+$H --lane nightly --state end       # 移除这条横道
+```
+
+状态：`working` 在干活、`waiting` 等你（琥珀色，等久了会提醒）、`done` 完成、`idle` 空闲、`end` 移除。
+`--open <路径或网址>` 让点击横道时打开它。横道跟随调用它的脚本，脚本退出就消失（也可以用 `--pid` 指定进程）。
 
 ## 隐私
 
@@ -144,6 +166,8 @@ Claude 向你提问（多选题那种）时，同一张卡片会列出选项：�
 - 每天向 GitHub 公开接口查询一次最新版本（可在 设置 → 通用 里关闭）。
 - 通知渠道设置（webhook 地址、机器人 token）存放在 `~/Library/Application Support/Aureole/channels.json`，权限 `0600`。
 - 用于预测消耗速度的采样存在旁边的 `history.json`，保留七天。
+- 按会话、模型、分钟统计的 token 数存在 `ledger.json`（保留八天），连同每个记录文件读到了哪里。会附带标题和目录名，
+  提示词和回复内容从不保存。
 - `defaults write app.aureole.Aureole debugDump -bool true` 会把原始额度返回存到 `Application Support/Aureole/debug/`
   便于报 bug。里面有用量数字，Codex 的还有账号 id 和邮箱，但从不包含 token。默认关闭。
 
@@ -154,6 +178,8 @@ swift build            # 库 + app
 swift test             # AureoleCore 单元测试
 scripts/run.sh         # debug 构建并重启
 scripts/dev-cmd.sh open|close|refresh   # 遥控正在运行的 app，方便截图
+scripts/demo.sh        # 用示例数据打开 app（不用装 agent、不用登录）
+scripts/snapshot.sh    # 用示例数据把面板渲染成 build/snapshots/*.png
 ```
 
 目录：
