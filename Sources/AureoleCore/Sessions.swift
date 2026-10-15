@@ -51,6 +51,8 @@ public struct AgentSession: Codable, Equatable, Identifiable, Sendable {
     public var spans: [SessionSpan]?
     /// Task lanes only: how far along (0…1), and what a click opens.
     public var progress: Double?
+    /// A title the agent itself gave the conversation (opencode).
+    public var title: String?
     public var openTarget: String?
 
     public var id: String { sessionId }
@@ -174,7 +176,7 @@ public enum SessionReducer {
                 let text = [tool, s.lastDetail].compactMap { $0 }.joined(separator: " · ")
                 s.recent = Array(([SessionActivity(at: now, text: text)] + (s.recent ?? [])).prefix(3))
             }
-            if e.toolName == "AskUserQuestion" {
+            if e.toolName == "AskUserQuestion" || e.toolName == "ask_user" || e.toolName == "question" {
                 s.set(.waitingInput, at: now)
                 s.waitingMessage = s.lastDetail
             } else {
@@ -233,6 +235,21 @@ public enum SessionReducer {
             }
             return str("command").map { oneLine($0, max: 60) }
         case "Edit", "Write", "Read", "MultiEdit", "NotebookEdit": return base("file_path") ?? base("notebook_path")
+        // Gemini CLI
+        case "run_shell_command": return str("description").map { oneLine($0, max: 60) } ?? str("command").map { oneLine($0, max: 60) }
+        case "read_file", "write_file", "replace": return base("file_path") ?? base("absolute_path")
+        case "grep_search", "glob": return str("pattern")
+        case "google_web_search": return str("query")
+        case "web_fetch": return str("prompt").map { oneLine($0, max: 60) }
+        case "ask_user":
+            let q = (i["questions"] as? [[String: Any]])?.first?["question"] as? String ?? str("question")
+            return q.map { oneLine($0, max: 80) }
+        // opencode
+        case "bash": return str("description").map { oneLine($0, max: 60) } ?? str("command").map { oneLine($0, max: 60) }
+        case "read", "write", "edit": return base("filePath")
+        case "grep": return str("pattern")
+        case "webfetch": return str("url")
+        case "task": return str("description")
         case "Grep", "Glob": return str("pattern")
         case "Agent", "Task": return str("description")
         case "WebFetch": return str("url")
@@ -379,7 +396,7 @@ public enum HookInstaller {
 
     /// Returns the settings with our hook added to every event (idempotent) or removed from all of them.
     public static func merge(settings: [String: Any], helperPath: String, install: Bool,
-                             events: [String] = events, arguments: String = "") -> [String: Any] {
+                             events: [String] = events, arguments: String = "", millisecondTimeouts: Bool = false) -> [String: Any] {
         var out = settings
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
         for event in events {
@@ -396,7 +413,9 @@ public enum HookInstaller {
                 // PermissionRequest (and PreToolUse, for Claude's questions) may wait for a click in the panel, at
                 // most a minute, when that is turned on. SessionEnd: Codex allows at most 3 s there.
                 let timeout = event == "PermissionRequest" || event == "PreToolUse" ? 120 : event == "SessionEnd" ? 3 : 5
-                list.append(["hooks": [["type": "command", "command": quoted(helperPath) + arguments, "timeout": timeout]]])
+                // Gemini CLI counts in milliseconds and is only observed, so it gets the short limit throughout.
+                let limit = millisecondTimeouts ? 5000 : timeout
+                list.append(["hooks": [["type": "command", "command": quoted(helperPath) + arguments, "timeout": limit]]])
             }
             if list.isEmpty { hooks[event] = nil } else { hooks[event] = list }
         }

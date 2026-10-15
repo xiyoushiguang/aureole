@@ -62,14 +62,22 @@ public struct ApprovalRequest: Codable, Equatable, Identifiable, Sendable {
                     parts.append((r["ruleContent"] as? String).map { "\(tool)(\($0))" } ?? tool)
                 }
             case "addDirectories":
-                for d in s["directories"] as? [String] ?? [] { parts.append(L10n.f("folder %@", (d as NSString).abbreviatingWithTildeInPath)) }
+                for d in s["directories"] as? [String] ?? [] { parts.append(L10n.f("folder %@", (d as NSString).lastPathComponent)) }
             case "setMode":
-                if let m = s["mode"] as? String { parts.append(L10n.f("mode %@", m)) }
+                switch s["mode"] as? String {
+                case "acceptEdits"?: parts.append(L10n.t("accept edits"))
+                case let m?: parts.append(L10n.f("mode %@", m))
+                case nil: break
+                }
             default:
                 return nil   // something we cannot show plainly is not offered
             }
         }
-        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+        guard !parts.isEmpty else { return nil }
+        let text = parts.joined(separator: ", ")
+        // Suggestions that only last for this session say so; saved rules need no note.
+        let sessionOnly = list.allSatisfy { ($0["destination"] as? String) == "session" }
+        return sessionOnly ? L10n.f("%@ (this session)", text) : text
     }
 
     /// The questions in an AskUserQuestion tool input; nil when there are none with options to pick.

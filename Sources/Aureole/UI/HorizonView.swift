@@ -52,6 +52,8 @@ enum HorizonColor {
             case .claude: return claudeBright
             case .codex: return codexBright
             case .task: return Theme.task
+            case .gemini: return Theme.gemini
+            case .opencode: return Theme.opencode
             }
         case .idle: return .white.opacity(0.45)
         case .background: return .white.opacity(0.3)
@@ -243,6 +245,10 @@ struct HorizonPanel: View {
             Spacer()
             key(Theme.claude, L10n.t("Claude working"))
             key(Theme.codex, L10n.t("Codex working"))
+            // Other agents get a key only while one of their sessions is on the panel.
+            ForEach([ProviderID.gemini, .opencode].filter { p in sessions.board.all.contains { $0.provider == p } }, id: \.self) { p in
+                key(Theme.accent(p), L10n.f("%@ working", p.displayName))
+            }
             key(Theme.amber, L10n.t("Waiting on you"))
             key(Theme.done, L10n.t("Done"))
             HStack(spacing: 6) {
@@ -697,7 +703,7 @@ struct SessionLight: View {
                 Circle().fill(color.opacity(0.55)).frame(width: 22, height: 22).blur(radius: 5)
                 Circle().fill(color).frame(width: 15, height: 15)
                 Image(systemName: "checkmark").font(.system(size: 8, weight: .black)).foregroundStyle(HorizonColor.ground)
-            } else if lane.session.provider == .codex || context == nil {
+            } else if lane.session.provider != .claude || context == nil {
                 if !lane.role.quiet { Circle().fill(color.opacity(0.6)).frame(width: 16, height: 16).blur(radius: 4) }
                 Circle().fill(color).frame(width: 11, height: 11)
             } else {
@@ -794,6 +800,8 @@ struct SessionCard: View {
     @State private var answered: (outcome: Outcome, reached: Bool)?
     /// Picks so far for each question (by question text), before "Send".
     @State private var picks: [String: [String]] = [:]
+    /// The request text's own height, so a one-line command gets a one-line box and only a long one scrolls.
+    @State private var requestHeight: CGFloat = 0
     weak var actions: AppActions?
 
     var body: some View {
@@ -881,13 +889,16 @@ struct SessionCard: View {
     private func approvalBlock(_ r: ApprovalRequest) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(r.tool).font(.system(size: 11, weight: .semibold)).foregroundStyle(HorizonColor.label)
-            ScrollView {
+            ScrollView(.vertical, showsIndicators: requestHeight > 140) {
                 Text(r.full)
                     .font(.system(size: 11, design: .monospaced)).foregroundStyle(.white)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background(GeometryReader { g in Color.clear.preference(key: RequestHeightKey.self, value: g.size.height) })
             }
-            .frame(maxHeight: 140)
+            .frame(height: min(max(requestHeight, 14), 140))
+            .onPreferenceChange(RequestHeightKey.self) { requestHeight = $0 }
             .padding(8)
             .background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.45)))
             HStack(spacing: 8) {
@@ -1152,4 +1163,9 @@ struct SideNumber: View {
             return (text, warning)
         }
     }
+}
+
+private struct RequestHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }

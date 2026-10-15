@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- **Gemini CLI and opencode.** Settings → Sessions installs Aureole's helper into Gemini CLI's hooks
+  (`~/.gemini/settings.json`) or a small plugin for opencode (`~/.config/opencode/plugins/aureole.js`).
+  Their sessions get lanes with state, current tool, waiting-for-permission, titles, tokens and value at
+  API prices (Gemini prices from Google's pricing page, including the increases it announces). Observed
+  only: approving from the panel stays Claude Code and Codex.
+- **Spend history.** Settings → Spend: value at API prices per day (30 days, 90 days, a year) and per
+  month for each agent. Day totals are kept for 400 days; the first launch reads back as far as the
+  transcripts on disk go (a few seconds, in the background).
+- **Prices** for gpt-6 models (Codex's current default was showing no value) and OpenAI's long-context
+  rates above 272K input tokens.
+- **Always allow** reads plainly when Claude Code offers a session change rather than a rule
+  ("folder proj, accept edits (this session)"); verified end to end against Claude Code 2.1.296.
+- The request box on an approval card is as tall as the request, up to 140 pt, instead of always 140.
+- The ServerChan channel is now listed as **WeChat**, with setup steps under it.
+- README: an animated tour (rendered from the demo data), Homebrew install.
+
 ## 0.6.0 — 2026-10-14
 
 - **Who used the quota.** The usage area on the horizon is split into one band per session, by what each

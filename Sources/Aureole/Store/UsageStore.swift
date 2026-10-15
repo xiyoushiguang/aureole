@@ -117,7 +117,7 @@ final class UsageStore: ObservableObject {
     private func provider(for id: ProviderID) -> any UsageProvider {
         switch id {
         case .claude: return ClaudeProvider(credentialSource: settings.claudeCredentialSource)
-        case .codex, .task: return CodexProvider()
+        case .codex, .task, .gemini, .opencode: return CodexProvider()
         }
     }
 

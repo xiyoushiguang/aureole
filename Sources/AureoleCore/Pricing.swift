@@ -62,7 +62,9 @@ public struct ModelPrice: Equatable, Sendable {
 /// value, never what was charged. Models without a published price cost nothing here (and say so).
 ///
 /// Sources, read 2026-10-14: platform.claude.com/docs/en/about-claude/pricing and
-/// developers.openai.com/api/docs/pricing (standard tier, short context). Global inference; no fast-mode premium.
+/// developers.openai.com/api/docs/pricing (standard tier; gpt-6 models and long-context rates added 2026-10-15). Global inference; no fast-mode premium.
+/// Gemini, read 2026-10-15 from ai.google.dev/gemini-api/docs/pricing (paid tier, standard, text), including the
+/// increases the page announces for later dates.
 public enum Pricing {
     /// Claude models, keyed by the part of the id after "claude-". Longest key that prefixes the id wins.
     static let claude: [String: ModelPrice] = [
@@ -92,6 +94,10 @@ public enum Pricing {
     static let haiku55Threshold = 100_000
 
     static let openAI: [String: ModelPrice] = [
+        "gpt-6-astra": .openAI(10, cached: 1, output: 50),
+        "gpt-6.1-sol": .openAI(2, cached: 0.1, output: 10),
+        "gpt-6-sol": .openAI(2, cached: 0.2, output: 10),
+        "gpt-6-luna": .openAI(0.1, cached: 0.01, output: 0.5),
         "gpt-5.6-sol": .openAI(4, cached: 0.4, output: 20),
         "gpt-5.6-terra": .openAI(2, cached: 0.2, output: 12),
         "gpt-5.6-luna": .openAI(0.2, cached: 0.02, output: 1.2),
@@ -111,9 +117,62 @@ public enum Pricing {
         "gpt-5": .openAI(1.25, cached: 0.125, output: 10),
     ]
 
+    /// Gemini text prices: before and from a date when the page announces a change, and above 200k prompt
+    /// tokens for the Pro models. Cached input bills at the caching rate.
+    struct GeminiPrice {
+        var base: ModelPrice
+        var long: ModelPrice? = nil
+        var later: (from: Date, price: ModelPrice)? = nil
+    }
+    static func day(_ y: Int, _ m: Int, _ d: Int) -> Date {
+        var c = DateComponents(); c.year = y; c.month = m; c.day = d
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        return cal.date(from: c)!
+    }
+    static let gemini: [String: GeminiPrice] = [
+        "gemini-4-argon": GeminiPrice(base: .openAI(2, cached: 0.1, output: 10),
+                                      later: (day(2026, 12, 1), .openAI(4, cached: 0.2, output: 20))),
+        "gemini-3.8-flash": GeminiPrice(base: .openAI(0.75, cached: 0.075, output: 3.75),
+                                        later: (day(2027, 1, 1), .openAI(1.5, cached: 0.15, output: 7.5))),
+        "gemini-3.6-flash": GeminiPrice(base: .openAI(0.75, cached: 0.075, output: 3.75),
+                                        later: (day(2027, 1, 1), .openAI(1.5, cached: 0.15, output: 7.5))),
+        "gemini-3.5-flash-lite": GeminiPrice(base: .openAI(0.3, cached: 0.03, output: 2.5)),
+        "gemini-3.1-flash-lite": GeminiPrice(base: .openAI(0.25, cached: 0.025, output: 1.5)),
+        "gemini-3.1-pro-preview": GeminiPrice(base: .openAI(2, cached: 0.2, output: 12), long: .openAI(4, cached: 0.4, output: 18)),
+        "gemini-3.1-pro-preview-customtools": GeminiPrice(base: .openAI(2, cached: 0.2, output: 12), long: .openAI(4, cached: 0.4, output: 18)),
+        "gemini-3-flash-preview": GeminiPrice(base: .openAI(0.5, cached: 0.05, output: 3)),
+        "gemini-2.5-pro": GeminiPrice(base: .openAI(1.25, cached: 0.125, output: 10), long: .openAI(2.5, cached: 0.25, output: 15)),
+        "gemini-2.5-flash": GeminiPrice(base: .openAI(0.3, cached: 0.03, output: 2.5)),
+        "gemini-2.5-flash-lite": GeminiPrice(base: .openAI(0.1, cached: 0.01, output: 0.4)),
+    ]
+    static let geminiLongThreshold = 200_000
+
+    /// OpenAI above 272K input tokens (read 2026-10-15, same page).
+    static let openAILong: [String: ModelPrice] = [
+        "gpt-6-astra": .openAI(20, cached: 2, output: 75),
+        "gpt-6.1-sol": .openAI(4, cached: 0.2, output: 15),
+        "gpt-6-sol": .openAI(4, cached: 0.4, output: 15),
+        "gpt-6-luna": .openAI(0.2, cached: 0.02, output: 0.75),
+        "gpt-5.6-sol": .openAI(8, cached: 0.8, output: 30),
+        "gpt-5.6-terra": .openAI(4, cached: 0.4, output: 18),
+        "gpt-5.6-luna": .openAI(0.4, cached: 0.04, output: 1.8),
+        "gpt-5.5": .openAI(10, cached: 1, output: 45),
+        "gpt-5.4": .openAI(5, cached: 0.5, output: 22.5),
+        "gpt-5.4-pro": .openAI(60, cached: 60, output: 270),
+        "gpt-5.5-pro": .openAI(60, cached: 60, output: 270),
+    ]
+    static let openAILongThreshold = 272_000
+
     /// The price of one call to `model`; nil for a model with no published price.
-    public static func price(model: String, tally: TokenTally = TokenTally()) -> ModelPrice? {
+    public static func price(model: String, tally: TokenTally = TokenTally(), at: Date = Date()) -> ModelPrice? {
         let id = model.lowercased()
+        if id.hasPrefix("gemini-") {
+            // Exact names, as for OpenAI: a "-lite" or "-image" variant has its own line.
+            guard let g = gemini[id] else { return nil }
+            if let long = g.long, tally.prompt > geminiLongThreshold { return long }
+            if let later = g.later, at >= later.from { return later.price }
+            return g.base
+        }
         if id.hasPrefix("claude-") {
             let rest = String(id.dropFirst("claude-".count))
             guard let key = longestPrefix(of: rest, in: claude.keys) else { return nil }
@@ -121,15 +180,17 @@ public enum Pricing {
             return claude[key]
         }
         // Exact names only for OpenAI: "gpt-5.5" must not price "gpt-5.5-cyber", which is not on the list.
-        if let p = openAI[id] { return p }
         // A dated snapshot ("gpt-5.4-2026-03-05") prices like its model.
-        if let key = longestPrefix(of: id, in: openAI.keys), id.dropFirst(key.count).first == "-",
-           id.dropFirst(key.count + 1).first?.isNumber == true { return openAI[key] }
-        return nil
+        var key: String? = openAI[id] != nil ? id : nil
+        if key == nil, let k = longestPrefix(of: id, in: openAI.keys), id.dropFirst(k.count).first == "-",
+           id.dropFirst(k.count + 1).first?.isNumber == true { key = k }
+        guard let key else { return nil }
+        if tally.prompt > openAILongThreshold, let long = openAILong[key] { return long }
+        return openAI[key]
     }
 
-    public static func cost(model: String, tally: TokenTally) -> Double? {
-        price(model: model, tally: tally)?.cost(tally)
+    public static func cost(model: String, tally: TokenTally, at: Date = Date()) -> Double? {
+        price(model: model, tally: tally, at: at)?.cost(tally)
     }
 
     /// The key must match a whole segment: "opus-5" prefixes "opus-5-20260101" but not "opus-55".

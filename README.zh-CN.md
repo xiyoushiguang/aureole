@@ -8,9 +8,7 @@ Aureole 是一个原生 macOS 小工具：Claude 和 Codex 订阅还剩多少额
 都显示在你本来就会看的地方。收起时，刘海下沿是两道光弧，一家一道，额度用掉多少就缩短多少；
 鼠标移上去，面板展开：
 
-![收起](docs/screenshots/closed.png)
-
-![展开](docs/screenshots/horizon-zh.png)
+![Aureole：收起的刘海、展开的面板、在面板里批准一条权限请求（示例数据）](docs/demo.zh.gif)
 
 **怎么看。** 时间沿着一颗星球的地平线从左往右走，白色的太阳就是**现在**。
 
@@ -36,8 +34,10 @@ Aureole 是一个原生 macOS 小工具：Claude 和 Codex 订阅还剩多少额
 - **谁用的。** 用量曲线下方按会话分成彩色色带，宽度取决于曲线上升时各会话花掉了多少。每条横道写着它的占比（`占额度 18%`）。
   这是估算：厂商不会告诉你哪个会话用了多少，找不到对应 token 的上升记为「其他」。
 - **按 API 价值多少钱。** 每个会话的 token（含子代理）、缓存命中率，以及按厂商公开 API 价折算的金额：横道上 `≈$3.2`，
-  窗口标题旁 `按 API 价 ≈$21`。订阅用户并没有付这笔钱，这是这些活按 API 计费的价值。数据读自 Claude Code 和 Codex
-  本机保存的对话记录，不向任何厂商发请求。
+  窗口标题旁 `按 API 价 ≈$21`。订阅用户并没有付这笔钱，这是这些活按 API 计费的价值。数据读自 Claude Code、Codex、
+  Gemini CLI 本机保存的对话记录（opencode 经 Aureole 的插件记录），不向任何厂商发请求。
+- **花费历史。** 设置 → 花费：按天（30 天、90 天、1 年）和按月、分 agent 看这个金额，保留 400 天。
+- **Gemini CLI 和 opencode 的会话**也有横道，带 token 和金额（没有额度：两家都没有 Aureole 能读的额度接口）。
 - **给自己的脚本加横道。** 夜间任务、长时间编译也能出现在时间轴上（见[给自己的脚本加横道](#给自己的脚本加横道)）。
 - **一键隐藏。** 共享屏幕时按 ⌃⌥⌘A（或用菜单栏图标）把面板藏起来。
 - **分流提示。** 一家快用完、另一家还很空时，面板会提醒你把新任务交给另一家。
@@ -82,11 +82,11 @@ brew install --cask xiyoushiguang/tap/aureole
 
 ### 卸载
 
-用 **设置 → 通用 → 卸载 Aureole…**：它会从 `~/.claude/settings.json` 和 `~/.codex/hooks.json` 里移除 Aureole 的 hooks，
-恢复你原来的状态栏，关闭登录时启动，并把 Aureole 的数据、日志和 app 本身移到废纸篓。你自己的其他 hooks 原样保留。
+用 **设置 → 通用 → 卸载 Aureole…**：它会从 `~/.claude/settings.json`、`~/.codex/hooks.json`、`~/.gemini/settings.json` 里移除 Aureole 的 hooks，
+删掉它的 opencode 插件，恢复你原来的状态栏，关闭登录时启动，并把 Aureole 的数据、日志和 app 本身移到废纸篓。你自己的其他 hooks 原样保留。
 
-如果已经直接删掉了 app，可以手动清理：在 `~/.claude/settings.json` 和 `~/.codex/hooks.json` 里删掉命令中含 `aureole-hook`
-的 hook 条目；如果 `statusLine` 指向 `aureole-hook --statusline`，用 `~/Library/Application Support/Aureole/statusline-chain.json`
+如果已经直接删掉了 app，可以手动清理：在 `~/.claude/settings.json`、`~/.codex/hooks.json`、`~/.gemini/settings.json` 里删掉命令中含 `aureole-hook`
+的 hook 条目，删除 `~/.config/opencode/plugins/aureole.js`；如果 `statusLine` 指向 `aureole-hook --statusline`，用 `~/Library/Application Support/Aureole/statusline-chain.json`
 里的原设置替换回去（或直接删掉）；最后删除 `~/Library/Application Support/Aureole` 和 `~/Library/Logs/Aureole`。
 Aureole 改动过的每个文件旁边都有一份一次性备份（`*.bak-aureole`）。
 
@@ -115,7 +115,12 @@ Aureole 复用你已经有的登录状态。它从不索要密码，也从不刷
 登记一个小程序（`aureole-hook`），你原有的 hooks 原样保留。会话名用 Claude Code 或 Codex 给对话起的标题；
 还没有标题时，用你第一条提示词的第一行；两个会话名字相同时，后开的那个加「· 2」。
 
-**后台任务**（`claude -p`、`codex exec`，或者既没有终端、也不在任何 app 里启动的，比如定时脚本）排在最下面，标着「后台」，从不推送通知。
+**Gemini CLI 和 opencode。** 同一页里，**Gemini CLI hooks → 安装** 会把小程序写进 `~/.gemini/settings.json`
+（Gemini CLI 只在你信任过的文件夹里运行 hooks）；**opencode 插件 → 安装** 会写一个小插件
+`~/.config/opencode/plugins/aureole.js`，把会话事件转给小程序，并记下每次回复的 token 给账本用；装好后重启 opencode。
+这两家只观察不代答：在面板里批准只支持 Claude Code 和 Codex 的协议。
+
+**后台任务**（`claude -p`、`codex exec`、`gemini -p`、`opencode run`，或者既没有终端、也不在任何 app 里启动的，比如定时脚本）排在最下面，标着「后台」，从不推送通知。
 
 **不重复提醒你已经看到的事：** 如果那个会话所在的终端或 app 正在最前面，而且你一分钟内动过电脑，就不推送。
 鼠标移到会话上点 **静音**，这个会话以后都不提醒；**设置 → 通用 → 免打扰时段** 让你选的时间段里所有推送（系统通知和各渠道）都暂停。

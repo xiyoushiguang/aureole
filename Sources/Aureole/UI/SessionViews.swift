@@ -127,7 +127,7 @@ struct SessionMeta: View {
         let now = Date()
         let quiet = SessionHealth.silence(s, now: now)
         let full = (context ?? 0) >= SessionHealth.contextNearlyFull
-        let base = (s.provider == .codex ? ["Codex"] : s.provider == .task ? [L10n.t("Task")] : []) + [Formatting.countdown(now.timeIntervalSince(s.startedAt))]
+        let base = (s.provider == .claude ? [] : [s.provider.displayName]) + [Formatting.countdown(now.timeIntervalSince(s.startedAt))]
         HStack(spacing: 0) {
             Text(base.joined(separator: " · ")).foregroundStyle(Theme.dim)
             if let c = context {

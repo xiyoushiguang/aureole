@@ -23,8 +23,12 @@ final class LedgerStore: ObservableObject {
         let url = url
         queue.async { [weak self] in
             var ledger = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder.aureole.decode(TokenLedger.self, from: $0) } ?? TokenLedger()
+            // A ledger from before day totals: read everything once more, this time back as far as the files go.
+            let backfill = ledger.version < TokenLedger.currentVersion || ledger.cursors.isEmpty
+            if backfill { ledger = TokenLedger() }
             let started = Date()
-            let changed = LedgerScanner.scan(&ledger, sources: LedgerScanner.sources())
+            var changed = LedgerScanner.scan(&ledger, sources: LedgerScanner.sources(everything: backfill))
+            if backfill { changed = true }
             if changed { Self.save(ledger, to: url) }
             let took = Date().timeIntervalSince(started)
             DispatchQueue.main.async {
@@ -84,6 +88,17 @@ final class LedgerStore: ObservableObject {
     func cost(_ provider: ProviderID, since from: Date) -> Double? {
         let t = ledger.total(provider: provider, from: from)
         return t.tally.isEmpty ? nil : t.cost
+    }
+
+    /// Providers with any day totals, in the usual order.
+    var providers: [ProviderID] {
+        let seen = Set(ledger.days.values.map(\.provider))
+        return ProviderID.agents.filter { seen.contains($0) }
+    }
+
+    /// Day totals for the spend history, oldest first.
+    func daily(since days: Int) -> [LedgerDay] {
+        ledger.daily(from: TokenLedger.dayKey(Date().addingTimeInterval(-Double(days - 1) * 86400)))
     }
 
     /// A name for a session that may no longer have a lane: its title, else its folder.

@@ -17,6 +17,19 @@ public struct LedgerBucket: Codable, Equatable, Sendable {
     public var date: Date { Date(timeIntervalSince1970: TimeInterval(minute) * 60) }
 }
 
+/// A provider's use on one calendar day, kept long after the minute buckets are pruned.
+public struct LedgerDay: Codable, Equatable, Sendable {
+    public var provider: ProviderID
+    /// yyyy-MM-dd in the Mac's time zone at the time of the call.
+    public var day: String
+    public var tally: TokenTally
+    public var cost: Double
+    public var unpriced: Int
+    public init(provider: ProviderID, day: String, tally: TokenTally, cost: Double, unpriced: Int) {
+        self.provider = provider; self.day = day; self.tally = tally; self.cost = cost; self.unpriced = unpriced
+    }
+}
+
 /// One model call, as read from a transcript line.
 public struct LedgerCall: Equatable, Sendable {
     public var at: Date
@@ -101,9 +114,34 @@ public struct TokenLedger: Codable, Equatable, Sendable {
     public var titles: [String: String] = [:]
     /// Each session's folder, for a name when it has no title.
     public var folders: [String: String] = [:]
+    /// Per provider and day, by "provider|yyyy-MM-dd".
+    public var days: [String: LedgerDay] = [:]
+    /// 0 for a ledger saved before day totals existed; such a ledger is read again from scratch once.
+    public var version = 0
+    public static let currentVersion = 1   // bump to re-read every transcript (a new day field, a price fix)
     public static let retention: TimeInterval = 8 * 86400
+    /// How long day totals are kept.
+    public static let history: TimeInterval = 400 * 86400
 
-    public init() {}
+    public init() { version = Self.currentVersion }
+
+    enum CodingKeys: String, CodingKey { case buckets, cursors, titles, folders, days, version }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        buckets = try c.decodeIfPresent([String: LedgerBucket].self, forKey: .buckets) ?? [:]
+        cursors = try c.decodeIfPresent([String: LedgerCursor].self, forKey: .cursors) ?? [:]
+        titles = try c.decodeIfPresent([String: String].self, forKey: .titles) ?? [:]
+        folders = try c.decodeIfPresent([String: String].self, forKey: .folders) ?? [:]
+        days = try c.decodeIfPresent([String: LedgerDay].self, forKey: .days) ?? [:]
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 0
+    }
+
+    public static func dayKey(_ date: Date, timeZone: TimeZone = .current) -> String {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timeZone
+        let c = cal.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
 
     public mutating func add(_ call: LedgerCall, provider: ProviderID, session: String) {
         let minute = Int(call.at.timeIntervalSince1970 / 60)
@@ -111,8 +149,14 @@ public struct TokenLedger: Codable, Equatable, Sendable {
         var b = buckets[key] ?? LedgerBucket(provider: provider, session: session, model: call.model, minute: minute,
                                               tally: TokenTally(), cost: 0, unpriced: 0)
         b.tally += call.tally
-        if let c = Pricing.cost(model: call.model, tally: call.tally) { b.cost += c } else { b.unpriced += call.tally.total }
+        let cost = Pricing.cost(model: call.model, tally: call.tally, at: call.at)
+        if let cost { b.cost += cost } else { b.unpriced += call.tally.total }
         buckets[key] = b
+        let day = Self.dayKey(call.at)
+        var d = days["\(provider.rawValue)|\(day)"] ?? LedgerDay(provider: provider, day: day, tally: TokenTally(), cost: 0, unpriced: 0)
+        d.tally += call.tally
+        if let cost { d.cost += cost } else { d.unpriced += call.tally.total }
+        days["\(provider.rawValue)|\(day)"] = d
     }
 
     public mutating func prune(now: Date) {
@@ -121,6 +165,25 @@ public struct TokenLedger: Codable, Equatable, Sendable {
         let live = Set(buckets.values.map(\.session))
         titles = titles.filter { live.contains($0.key) }
         folders = folders.filter { live.contains($0.key) }
+        let oldest = Self.dayKey(now.addingTimeInterval(-Self.history))
+        days = days.filter { $0.value.day >= oldest }
+    }
+
+    /// Day totals for a provider (all providers when nil), oldest first, one entry per day that had any use.
+    public func daily(provider: ProviderID? = nil, from: String? = nil) -> [LedgerDay] {
+        days.values.filter { (provider == nil || $0.provider == provider) && (from == nil || $0.day >= from!) }
+            .sorted { ($0.day, $0.provider.rawValue) < ($1.day, $1.provider.rawValue) }
+    }
+
+    /// Month totals ("yyyy-MM") for a provider, newest first.
+    public func monthly(provider: ProviderID) -> [(month: String, total: Total)] {
+        var out: [String: Total] = [:]
+        for d in days.values where d.provider == provider {
+            var t = out[String(d.day.prefix(7)), default: Total()]
+            t.tally += d.tally; t.cost += d.cost; t.unpriced += d.unpriced
+            out[String(d.day.prefix(7))] = t
+        }
+        return out.sorted { $0.key > $1.key }.map { ($0.key, $0.value) }
     }
 
     // MARK: Queries
@@ -175,9 +238,11 @@ public enum LedgerScanner {
     static var home: URL { FileManager.default.homeDirectoryForCurrentUser }
 
     /// Claude transcripts (and their sub-agents', counted to the parent) and Codex rollouts touched within the retention.
-    public static func sources(now: Date = Date(), claudeRoot: URL? = nil, codexRoot: URL? = nil) -> [Source] {
+    /// With `everything`, all transcripts still on disk within the day-total history (the one-time backfill).
+    public static func sources(now: Date = Date(), claudeRoot: URL? = nil, codexRoot: URL? = nil, geminiRoot: URL? = nil,
+                               opencodeRoot: URL? = nil, everything: Bool = false) -> [Source] {
         let fm = FileManager.default
-        let cutoff = now.addingTimeInterval(-TokenLedger.retention)
+        let cutoff = now.addingTimeInterval(-(everything ? TokenLedger.history : TokenLedger.retention))
         func recent(_ url: URL) -> Bool {
             ((try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast) >= cutoff
         }
@@ -200,14 +265,40 @@ public enum LedgerScanner {
         // ~/.codex/sessions/YYYY/MM/DD/rollout-…-<thread id>.jsonl; only the days inside the retention.
         let sessions = codexRoot ?? home.appendingPathComponent(".codex/sessions")
         let cal = Calendar(identifier: .gregorian)
-        for back in 0...Int(TokenLedger.retention / 86400) {
+        for back in 0...Int((everything ? TokenLedger.history : TokenLedger.retention) / 86400) {
             let day = cal.dateComponents([.year, .month, .day], from: now.addingTimeInterval(-Double(back) * 86400))
             let dir = sessions.appendingPathComponent(String(format: "%04d/%02d/%02d", day.year ?? 0, day.month ?? 0, day.day ?? 0))
             for file in list(dir) where file.pathExtension == "jsonl" && recent(file) {
                 out.append(Source(url: file, provider: .codex, session: codexThread(file)))
             }
         }
+        // Gemini CLI: ~/.gemini/tmp/<project>/chats/session-….jsonl, sub-agents in chats/<parent session>/….jsonl.
+        // The session id is on the file's first line.
+        for project in list(geminiRoot ?? GeminiHooks.chatsRoot) {
+            for item in list(project.appendingPathComponent("chats")) {
+                if item.pathExtension == "jsonl" {
+                    if recent(item), let id = firstLine(item).flatMap(TranscriptLines.geminiSession) {
+                        out.append(Source(url: item, provider: .gemini, session: id))
+                    }
+                } else {
+                    for sub in list(item) where sub.pathExtension == "jsonl" && recent(sub) {
+                        out.append(Source(url: sub, provider: .gemini, session: item.lastPathComponent))
+                    }
+                }
+            }
+        }
+        // opencode, through Aureole's own plugin: one usage log per session.
+        for file in list(opencodeRoot ?? OpencodePlugin.usageDir) where file.pathExtension == "jsonl" && recent(file) {
+            out.append(Source(url: file, provider: .opencode, session: file.deletingPathExtension().lastPathComponent))
+        }
         return out
+    }
+
+    static func firstLine(_ url: URL) -> Data? {
+        guard let h = FileHandle(forReadingAtPath: url.path) else { return nil }
+        defer { try? h.close() }
+        guard let head = try? h.read(upToCount: 64 << 10), let nl = head.firstIndex(of: 0x0A) else { return nil }
+        return Data(head[head.startIndex..<nl])
     }
 
     /// The thread id at the end of a rollout file name (a UUID, 36 characters).
@@ -220,9 +311,12 @@ public enum LedgerScanner {
     @discardableResult
     public static func scan(_ ledger: inout TokenLedger, sources: [Source], now: Date = Date()) -> Bool {
         var changed = false
+        // A cursor outlives the scan window: a session resumed weeks later goes on from where it was read, so its
+        // old lines are not counted into the day totals twice. Only files that are gone lose theirs.
         let live = Set(sources.map(\.url.path))
-        if ledger.cursors.keys.contains(where: { !live.contains($0) }) {
-            ledger.cursors = ledger.cursors.filter { live.contains($0.key) }
+        let gone = ledger.cursors.keys.filter { !live.contains($0) && !FileManager.default.fileExists(atPath: $0) }
+        if !gone.isEmpty {
+            for k in gone { ledger.cursors[k] = nil }
             changed = true
         }
         for src in sources {
@@ -261,6 +355,14 @@ public enum LedgerScanner {
         return changed
     }
 
+    /// False when the message was counted already (agents write a message again as it fills in).
+    static func remember(_ id: String, in cursor: inout LedgerCursor) -> Bool {
+        if cursor.recentIds.contains(id) { return false }
+        cursor.recentIds.append(id)
+        if cursor.recentIds.count > 64 { cursor.recentIds.removeFirst(cursor.recentIds.count - 64) }
+        return true
+    }
+
     static func take(_ line: Data, src: Source, cursor: inout LedgerCursor, into ledger: inout TokenLedger) -> Bool {
         switch src.provider {
         case .claude:
@@ -270,11 +372,7 @@ public enum LedgerScanner {
             }
             if let t = TranscriptLines.claudeTitle(line) { ledger.titles[src.session] = t; return true }
             guard let (id, call) = TranscriptLines.claude(line) else { return false }
-            if let id {
-                if cursor.recentIds.contains(id) { return false }
-                cursor.recentIds.append(id)
-                if cursor.recentIds.count > 64 { cursor.recentIds.removeFirst(cursor.recentIds.count - 64) }
-            }
+            if let id { if !remember(id, in: &cursor) { return false } }
             ledger.add(call, provider: .claude, session: src.session)
             return true
         case .codex:
@@ -285,6 +383,21 @@ public enum LedgerScanner {
             }
             guard let call = TranscriptLines.codex(line, cursor: &cursor) else { return false }
             ledger.add(call, provider: .codex, session: src.session)
+            return true
+        case .gemini:
+            guard let (id, call) = TranscriptLines.gemini(line) else {
+                if ledger.folders[src.session] == nil, let obj = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+                   let dirs = obj["directories"] as? [String], let d = dirs.first { ledger.folders[src.session] = d }
+                return false
+            }
+            if let id { if !remember(id, in: &cursor) { return false } }
+            ledger.add(call, provider: .gemini, session: src.session)
+            return true
+        case .opencode:
+            guard let (id, call, cwd) = TranscriptLines.opencode(line) else { return false }
+            if ledger.folders[src.session] == nil, let cwd { ledger.folders[src.session] = cwd }
+            if let id { if !remember(id, in: &cursor) { return false } }
+            ledger.add(call, provider: .opencode, session: src.session)
             return true
         case .task:
             return false

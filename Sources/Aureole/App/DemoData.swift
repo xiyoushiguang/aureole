@@ -10,6 +10,7 @@ enum DemoData {
     static let login = "demo-login-page"
     static let explore = "demo-explore"
     static let codexCI = "demo-codex-ci"
+    static let docs = "demo-gemini-docs"
     static let nightly = "task-nightly-backup"
 
     static func usage(now: Date) -> [ProviderSnapshot] {
@@ -87,16 +88,22 @@ enum DemoData {
         ci.lastTool = "shell"; ci.lastDetail = "pytest tests/test_api.py -x"
         ci.updatedAt = ago(0.5)
 
+        var docs = session(Self.docs, .gemini, cwd: "~/work/web", started: 30)
+        docs.set(.working, at: ago(28)); docs.set(.idle, at: ago(20)); docs.set(.working, at: ago(9))
+        docs.turnStartedAt = ago(9)
+        docs.lastTool = "write_file"; docs.lastDetail = "guide.zh.md"
+        docs.updatedAt = ago(0.4)
+
         var nightly = TaskLaneUpdate(id: "nightly-backup", state: .working, name: "Nightly backup", detail: "Uploading photos 4 of 10",
                                      progress: 0.4).apply(to: nil, now: ago(26))!
         nightly.updatedAt = ago(1)
 
         let titles = [Self.billing: "Refactor the billing service", Self.notes: "Write the release notes",
-                      Self.login: "Migrate the login page", Self.codexCI: "Fix the flaky CI test"]
+                      Self.login: "Migrate the login page", Self.codexCI: "Fix the flaky CI test", Self.docs: "Translate the docs"]
         let approval = ApprovalRequest(id: "demo-approval", sessionId: Self.billing, provider: .claude, tool: "Bash",
                                        full: "npm run test -- --watch=false", at: ago(1.7), expires: now.addingTimeInterval(42),
                                        alwaysRule: "Bash(npm run test:*)")
-        return Sessions(list: [billing, notes, login, ci, nightly], titles: titles,
+        return Sessions(list: [billing, notes, login, ci, docs, nightly], titles: titles,
                         context: [Self.billing: 412_000, Self.notes: 48_000, Self.login: 131_000], approvals: [approval])
     }
 
@@ -121,6 +128,24 @@ enum DemoData {
         spend(Self.login, .claude, model: "claude-opus-5-5", from: 17, to: 3, perMinute: light)
         spend(Self.codexCI, .codex, model: "gpt-5.6-terra", from: 48, to: 35, perMinute: light)
         spend(Self.codexCI, .codex, model: "gpt-5.6-terra", from: 12, to: 0, perMinute: light)
+        spend(Self.docs, .gemini, model: "gemini-3.8-flash", from: 28, to: 20, perMinute: light)
+        spend(Self.docs, .gemini, model: "gemini-3.8-flash", from: 9, to: 0, perMinute: light)
+        // Two months of day totals for the spend history: weekdays busier, a quiet weekend, Codex now and then.
+        let cal = Calendar.current
+        for back in 1...60 {
+            let day = now.addingTimeInterval(-Double(back) * 86400)
+            let weekend = cal.isDateInWeekend(day)
+            let wave = 0.6 + 0.4 * sin(Double(back) / 4)
+            let claude = (weekend ? 3.0 : 14.0) * wave + Double(back % 5)
+            let key = TokenLedger.dayKey(day)
+            l.days["claude|\(key)"] = LedgerDay(provider: .claude, day: key, tally: TokenTally(cacheRead: Int(claude * 2_000_000)), cost: claude, unpriced: 0)
+            if back % 3 == 0 {
+                l.days["codex|\(key)"] = LedgerDay(provider: .codex, day: key, tally: TokenTally(cacheRead: Int(wave * 4_000_000)), cost: 2.5 * wave, unpriced: 0)
+            }
+            if back < 12, back % 2 == 0 {
+                l.days["gemini|\(key)"] = LedgerDay(provider: .gemini, day: key, tally: TokenTally(cacheRead: 3_000_000), cost: 0.8 * wave, unpriced: 0)
+            }
+        }
         l.titles = [Self.explore: "Explore the codebase", Self.billing: "Refactor the billing service",
                     Self.notes: "Write the release notes", Self.login: "Migrate the login page"]
         return l

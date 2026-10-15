@@ -9,9 +9,7 @@ you have left, and what each of your Claude Code sessions is doing, right where 
 are. Closed, two arcs of light hug the notch, one per provider, shrinking as the current window
 drains. Hover, and the panel drops down:
 
-![closed](docs/screenshots/closed.png)
-
-![open](docs/screenshots/horizon.png)
+![Aureole: the closed notch, the panel, and a permission request answered from the panel (sample data)](docs/demo.gif)
 
 **How to read it.** Time runs left to right along the edge of a planet, with **now** at the white
 sun.
@@ -46,8 +44,12 @@ sun.
   vendors do not say which session used what, so a rise with no tokens behind it counts as *other*.
 - **What it would have cost.** Tokens per session (sub-agents included), cache hit rate, and their value
   at public API prices: `≈$3.2` on a lane, `≈$21 at API prices` for the window. With a subscription this
-  is what the work was worth, not what you paid. Read from the transcripts Claude Code and Codex keep;
-  nothing is asked of any vendor.
+  is what the work was worth, not what you paid. Read from the transcripts Claude Code, Codex and
+  Gemini CLI keep (opencode through Aureole's plugin); nothing is asked of any vendor.
+- **Spend history.** Settings → Spend charts that value day by day (30 days, 90 days, a year) and
+  month by month per agent, kept for 400 days.
+- **Gemini CLI and opencode sessions** get lanes too, with their tokens and value (no quota: neither
+  publishes one Aureole can read).
 - **Lanes for your own scripts.** A nightly job or a long build can put itself on the time axis
   (see [Lanes for your scripts](#lanes-for-your-scripts)).
 - **Hide it** with ⌃⌥⌘A (or the menu bar item) when you share your screen.
@@ -100,11 +102,13 @@ replaced and the release page opens instead.
 ### Uninstalling
 
 Use **Settings → General → Uninstall Aureole…**. It removes Aureole's hooks from
-`~/.claude/settings.json` and `~/.codex/hooks.json`, puts back the status line you had before, turns off
+`~/.claude/settings.json`, `~/.codex/hooks.json` and `~/.gemini/settings.json`, removes its opencode plugin,
+puts back the status line you had before, turns off
 launch at login, and moves Aureole's data, logs and the app to the Trash. Your other hooks are kept.
 
 If you already deleted the app, clean up by hand: remove every hook entry whose command contains
-`aureole-hook` from `~/.claude/settings.json` and `~/.codex/hooks.json`; if `statusLine` points at
+`aureole-hook` from `~/.claude/settings.json`, `~/.codex/hooks.json` and `~/.gemini/settings.json`, delete
+`~/.config/opencode/plugins/aureole.js`; if `statusLine` points at
 `aureole-hook --statusline`, restore it from `~/Library/Application Support/Aureole/statusline-chain.json`
 (or delete it); then delete `~/Library/Application Support/Aureole` and `~/Library/Logs/Aureole`.
 Aureole made a one-time backup of each file it edited next to it (`*.bak-aureole`).
@@ -140,7 +144,13 @@ small helper (`aureole-hook`) in `~/.claude/settings.json` for eight hook events
 you already have. Sessions are named by the title Claude Code or Codex gives the conversation; until
 there is one, by the first line of your first prompt; two sessions that would read the same get "· 2".
 
-**Background runs** (`claude -p`, `codex exec`, or anything started with neither a terminal nor an app
+**Gemini CLI and opencode.** In the same settings, **Gemini CLI hooks → Install** adds the helper to
+`~/.gemini/settings.json` (Gemini CLI runs hooks only in folders you have trusted in it), and **opencode
+plugin → Install** writes a small plugin, `~/.config/opencode/plugins/aureole.js`, that forwards session
+events to the helper and logs each reply's tokens for the ledger; restart opencode after adding it. Both
+are observed only: approving from the panel speaks Claude Code's and Codex's protocol.
+
+**Background runs** (`claude -p`, `codex exec`, `gemini -p`, `opencode run`, or anything started with neither a terminal nor an app
 above it, such as a cron job) are listed at the bottom, marked *Background*, and never notified.
 
 **Notifications stay quiet when they would only repeat what you see:** nothing is sent while the

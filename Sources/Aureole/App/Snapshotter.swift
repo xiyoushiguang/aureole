@@ -34,9 +34,31 @@ enum Snapshotter {
         render(shots, settings: settings, store: store, sessions: sessions, ledger: ledger, dir: dir, language: language)
     }
 
+    /// Settings → Spend with the demo history, as it looks in the settings window.
+    static func renderSpend(ledger: LedgerStore, dir: URL, language: Language) {
+        let size = CGSize(width: 560, height: 620)
+        let host = NSHostingView(rootView: SpendTab(ledger: ledger).frame(width: size.width, height: size.height))
+        host.frame = CGRect(origin: .zero, size: size)
+        let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.contentView = host
+        window.setFrameOrigin(NSPoint(x: -30_000, y: -30_000))
+        window.orderFrontRegardless()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                host.cacheDisplay(in: host.bounds, to: rep)
+                let suffix = language == .chineseSimplified ? ".zh" : ""
+                let url = dir.appendingPathComponent("spend" + suffix + ".png")
+                if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: url); print("wrote \(url.path)") }
+            }
+            window.orderOut(nil)
+            NSApp.terminate(nil)
+        }
+    }
+
     private static func render(_ shots: [Shot], settings: SettingsStore, store: UsageStore, sessions: SessionStore,
                                ledger: LedgerStore, dir: URL, language: Language) {
-        guard let shot = shots.first else { NSApp.terminate(nil); return }
+        guard let shot = shots.first else { renderSpend(ledger: ledger, dir: dir, language: language); return }
         // The panel picks up a focused lane from the argument domain, as `-debugFocusLane` does on a real launch.
         UserDefaults.standard.setVolatileDomain(shot.focus.map { ["debugFocusLane": $0] } ?? [:], forName: UserDefaults.argumentDomain)
         let model = NotchViewModel()

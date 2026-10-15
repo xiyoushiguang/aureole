@@ -27,8 +27,11 @@ final class PricingTests: XCTestCase {
         XCTAssertNil(Pricing.price(model: "gpt-5.5-cyber"))
         XCTAssertNil(Pricing.price(model: "codex-auto-review"))
         // Cache writes cost what input costs at OpenAI.
+        XCTAssertEqual(Pricing.cost(model: "gpt-5.5", tally: TokenTally(input: 100_000, cacheRead: 100_000, output: 100_000))!,
+                       3.55, accuracy: 1e-9)
+        // Past 272K input tokens the long-context rate applies to the whole call.
         XCTAssertEqual(Pricing.cost(model: "gpt-5.5", tally: TokenTally(input: 1_000_000, cacheRead: 1_000_000, output: 1_000_000))!,
-                       35.5, accuracy: 1e-9)
+                       56, accuracy: 1e-9)
     }
 
     func testShortMoney() {
@@ -255,5 +258,46 @@ final class AlwaysAllowTests: XCTestCase {
         // Plain allow never adds a rule, even when suggestions exist.
         let plain = try JSONSerialization.jsonObject(with: Data(ApprovalDecision.allow.hookOutput(suggestions: rules).utf8)) as! [String: Any]
         XCTAssertNil(((plain["hookSpecificOutput"] as! [String: Any])["decision"] as! [String: Any])["updatedPermissions"])
+    }
+}
+
+final class LedgerHistoryTests: XCTestCase {
+    func testDayTotalsOutlivePrunedBuckets() {
+        var l = TokenLedger()
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let old = now.addingTimeInterval(-30 * 86400)
+        let t = TokenTally(input: 1_000_000, output: 0)
+        l.add(LedgerCall(at: old, model: "claude-opus-5-5", tally: t), provider: .claude, session: "a")
+        l.add(LedgerCall(at: now, model: "claude-opus-5-5", tally: t), provider: .claude, session: "b")
+        l.add(LedgerCall(at: now, model: "unknown-model", tally: t), provider: .codex, session: "c")
+        l.prune(now: now)
+        XCTAssertEqual(l.buckets.count, 2)                      // the 30-day-old minute is gone…
+        XCTAssertEqual(l.daily(provider: .claude).count, 2)     // …its day total is not
+        XCTAssertEqual(l.daily(provider: .claude).first?.day, TokenLedger.dayKey(old))
+        XCTAssertEqual(l.daily(provider: .claude).first?.cost ?? 0, 4, accuracy: 0.001)
+        XCTAssertEqual(l.daily(provider: .codex).first?.unpriced, 1_000_000)
+        XCTAssertEqual(l.monthly(provider: .claude).reduce(0) { $0 + $1.total.cost }, 8, accuracy: 0.001)
+        l.prune(now: now.addingTimeInterval(TokenLedger.history))
+        XCTAssertTrue(l.daily(provider: .claude).allSatisfy { $0.day >= TokenLedger.dayKey(now) })
+    }
+
+    func testOldLedgerDecodesAsVersionZero() throws {
+        let data = Data(#"{"buckets":{},"cursors":{},"titles":{},"folders":{}}"#.utf8)
+        let l = try JSONDecoder().decode(TokenLedger.self, from: data)
+        XCTAssertEqual(l.version, 0)
+        XCTAssertEqual(TokenLedger().version, TokenLedger.currentVersion)
+    }
+
+    func testCursorKeptForFileOutsideWindow() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("s.jsonl")
+        try Data().write(to: file)
+        var l = TokenLedger()
+        l.cursors[file.path] = LedgerCursor()
+        l.cursors[dir.appendingPathComponent("gone.jsonl").path] = LedgerCursor()
+        LedgerScanner.scan(&l, sources: [])
+        XCTAssertNotNil(l.cursors[file.path])
+        XCTAssertEqual(l.cursors.count, 1)
     }
 }

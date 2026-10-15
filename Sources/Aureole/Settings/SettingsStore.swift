@@ -125,7 +125,7 @@ final class SettingsStore: ObservableObject {
         switch id {
         case .claude: return claudeEnabled
         case .codex: return codexEnabled
-        case .task: return sessionsEnabled
+        case .task, .gemini, .opencode: return sessionsEnabled
         }
     }
 

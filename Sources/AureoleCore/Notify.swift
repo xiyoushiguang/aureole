@@ -131,7 +131,7 @@ public struct EventDetector: Sendable {
 }
 
 public enum ChannelKind: String, Codable, CaseIterable, Identifiable, Sendable {
-    case native, discord, slack, telegram, feishu, dingtalk, wecom, ntfy, bark, serverchan, webhook, shell
+    case native, discord, slack, telegram, feishu, dingtalk, wecom, serverchan, ntfy, bark, webhook, shell
 
     public var id: String { rawValue }
     public var displayName: String {
@@ -145,7 +145,7 @@ public enum ChannelKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .wecom: return L10n.t("WeCom")
         case .ntfy: return "ntfy"
         case .bark: return "Bark"
-        case .serverchan: return L10n.t("ServerChan (WeChat)")
+        case .serverchan: return L10n.t("WeChat")
         case .webhook: return L10n.t("Custom webhook")
         case .shell: return L10n.t("Shell script")
         }
@@ -176,7 +176,7 @@ public enum ChannelKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .wecom: return L10n.t("Group robot webhook URL.")
         case .ntfy: return L10n.t("Topic URL, e.g. https://ntfy.sh/my-aureole.")
         case .bark: return L10n.t("Server URL (default https://api.day.app) and your device key.")
-        case .serverchan: return L10n.t("SendKey from sct.ftqq.com; delivers to WeChat.")
+        case .serverchan: return L10n.t("Personal WeChat has no push API for apps, so messages go through ServerChan, a third-party relay: follow its official account at sct.ftqq.com and paste the SendKey it gives you. Its free plan limits messages per day.")
         case .webhook: return L10n.t("POST with a JSON template. Placeholders: {{title}} {{body}} {{event}} {{provider}} {{percent}}.")
         case .shell: return L10n.t("Path to an executable. Receives AUREOLE_* env vars and a JSON event on stdin.")
         }

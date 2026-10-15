@@ -17,14 +17,22 @@ func main() {
 
     // Stdin is small (a few KB); cap it anyway so a runaway tool_input cannot stall the hook.
     let data = FileHandle.standardInput.readData(ofLength: 4 << 20)
-    guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-          let event = HookEvent(json: obj) else { return }
+    let provider: ProviderID = args.contains(HookInstaller.codexFlag) ? .codex
+        : args.contains(GeminiHooks.flag) ? .gemini : args.contains(OpencodePlugin.flag) ? .opencode : .claude
+    guard var obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+    if provider == .gemini { guard let n = GeminiHooks.normalize(obj) else { return }; obj = n }
+    guard let event = HookEvent(json: obj) else { return }
+    // opencode's plugin passes on the title opencode gives a conversation; that is not a state change.
+    if event.name == "Title" {
+        let url = SessionFiles.url(for: event.sessionId)
+        if var s = SessionFiles.load(url), let t = obj["title"] as? String, s.title != t { s.title = t; try? SessionFiles.save(s) }
+        return
+    }
     // Sub-agent activity belongs to the parent session's turn; only the parent agent changes the state.
     if obj["agent_id"] != nil, event.name != "SubagentStop" { return }
 
     let now = Date()
     let keepPrompt = UserDefaults(suiteName: "app.aureole.Aureole")?.object(forKey: "sessionPromptPreview") as? Bool ?? true
-    let provider: ProviderID = args.contains(HookInstaller.codexFlag) ? .codex : .claude
     let url = SessionFiles.url(for: event.sessionId)
     var session = SessionReducer.apply(event, to: SessionFiles.load(url), now: now, keepPrompt: keepPrompt, provider: provider)
     if session.agentPid == nil || session.tty == nil || event.name == "SessionStart" {
@@ -35,6 +43,8 @@ func main() {
         return
     }
     try? SessionFiles.save(session)
+    // Answering from the panel speaks Claude Code's (and Codex's) hook protocol only.
+    guard provider == .claude || provider == .codex else { return }
     if event.name == "PermissionRequest" { offerPanelApproval(event, session: session) }
     if event.name == "PreToolUse", event.toolName == "AskUserQuestion" { offerPanelAnswer(event, session: session) }
 }
@@ -130,13 +140,14 @@ func fillProcessInfo(_ s: inout AgentSession) {
     s.weztermPane = env["WEZTERM_PANE"]
     s.kittyWindowId = env["KITTY_WINDOW_ID"]
     s.kittyListenOn = env["KITTY_LISTEN_ON"]
-    // Walk up from our parent; the CLI shows up as "claude" (the installed binary), "node" or "codex".
+    // Walk up from our parent; the CLI shows up as "claude" (the installed binary), "node" (also Gemini CLI),
+    // "codex" or "opencode" (which runs its plugins, and so us, in its own process).
     var pid = getppid()
     var agent: pid_t = pid
     for _ in 0..<6 {
         guard let info = ProcessTree.info(pid) else { break }
         let name = info.name.lowercased()
-        if name == "claude" || name == "node" || name.hasPrefix("claude") || name.hasPrefix("codex") {
+        if name == "claude" || name == "node" || name.hasPrefix("claude") || name.hasPrefix("codex") || name == "opencode" {
             agent = pid
             break
         }

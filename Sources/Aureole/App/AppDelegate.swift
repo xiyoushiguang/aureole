@@ -85,6 +85,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
                                ("app.aureole.notify-test", { [weak self] in self?.store.sendTest(to: ChannelConfig(kind: .native)) }),
                                ("app.aureole.codex-hooks-install", { [weak self] in self?.sessions.installCodexHooks() }),
                                ("app.aureole.codex-hooks-remove", { [weak self] in self?.sessions.uninstallCodexHooks() }),
+                               ("app.aureole.gemini-hooks-install", { [weak self] in self?.sessions.installGeminiHooks() }),
+                               ("app.aureole.gemini-hooks-remove", { [weak self] in self?.sessions.uninstallGeminiHooks() }),
+                               ("app.aureole.opencode-install", { [weak self] in self?.sessions.setOpencodePlugin(installed: true) }),
+                               ("app.aureole.opencode-remove", { [weak self] in self?.sessions.setOpencodePlugin(installed: false) }),
                                ("app.aureole.update-dryrun", { Self.updateDryRun() }),
                                ("app.aureole.refresh", { [weak self] in self?.refreshNow() })] as [(String, () -> Void)] {
             center.addObserver(forName: Notification.Name(name), object: nil, queue: .main) { _ in
@@ -131,7 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
     func uninstall() {
         let alert = NSAlert()
         alert.messageText = L10n.t("Uninstall Aureole?")
-        alert.informativeText = L10n.t("This removes Aureole's hooks from ~/.claude/settings.json and ~/.codex/hooks.json, puts back the status line you had before, turns off launch at login, moves Aureole's data, logs and the app to the Trash, and quits. Your other hooks and settings are kept.")
+        alert.informativeText = L10n.t("This removes Aureole's hooks from ~/.claude/settings.json, ~/.codex/hooks.json and ~/.gemini/settings.json, removes its opencode plugin, puts back the status line you had before, turns off launch at login, moves Aureole's data, logs and the app to the Trash, and quits. Your other hooks and settings are kept.")
         alert.addButton(withTitle: L10n.t("Uninstall"))
         alert.addButton(withTitle: L10n.t("Cancel"))
         alert.alertStyle = .warning
@@ -142,6 +146,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
         if sessions.hookStatus != .notInstalled { sessions.uninstallHooks() }
         if sessions.statuslineInstalled { sessions.uninstallStatusline() }
         if sessions.codexHookStatus != .notInstalled { sessions.uninstallCodexHooks() }
+        if sessions.geminiHookStatus != .notInstalled { sessions.uninstallGeminiHooks() }
+        if sessions.opencodeInstalled { sessions.setOpencodePlugin(installed: false) }
         try? SMAppService.mainApp.unregister()
         let fm = FileManager.default
         for url in [AureolePaths.appSupport, fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Aureole"),
@@ -154,7 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
 
     func openSettings() {
         if settingsWindow == nil {
-            let view = SettingsView(settings: settings, store: store, sessions: sessions,
+            let view = SettingsView(settings: settings, store: store, sessions: sessions, ledger: ledger,
                                     openWelcome: { [weak self] in self?.openWelcome() },
                                     uninstall: { [weak self] in self?.uninstall() })
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 480),

@@ -18,6 +18,8 @@ final class SessionStore: ObservableObject {
     @Published private(set) var hookStatus: HookInstaller.Status = .notInstalled
     @Published private(set) var statuslineInstalled = false
     @Published private(set) var codexHookStatus: HookInstaller.Status = .notInstalled
+    @Published private(set) var geminiHookStatus: HookInstaller.Status = .notInstalled
+    @Published private(set) var opencodeInstalled = false
     /// Other tools' handlers on the events Aureole answers or announces (Claude Code and Codex), by program name.
     @Published private(set) var hookNeighbors: [String] = []
     /// Context used (0...1) per session as Claude Code's status line reports it; exact, unlike the token estimate.
@@ -147,6 +149,7 @@ final class SessionStore: ObservableObject {
         }
         if open != approvals { approvals = open }
         var reported: [String: Double] = [:]
+        for s in live { if let t = s.title, titles[s.sessionId] != t { titles[s.sessionId] = t } }
         for f in StatuslineFiles.loadAll(now: now) {
             if let pct = f.contextPercent { reported[f.sessionId] = pct / 100 }
             if let n = f.sessionName, titles[f.sessionId] != n { titles[f.sessionId] = n }
@@ -282,6 +285,9 @@ final class SessionStore: ObservableObject {
         statuslineInstalled = current.map { StatuslineInstaller.isInstalled(settings: $0) } ?? false
         let codex = try? HookInstaller.read(url: HookInstaller.codexHooksURL)
         codexHookStatus = codex.map { HookInstaller.status(settings: $0, events: HookInstaller.codexEvents) } ?? .notInstalled
+        let gemini = try? HookInstaller.read(url: GeminiHooks.settingsURL)
+        geminiHookStatus = gemini.map { HookInstaller.status(settings: $0, events: GeminiHooks.events) } ?? .notInstalled
+        opencodeInstalled = OpencodePlugin.isInstalled()
         var neighbors = current.map { HookNeighbors.find(settings: $0) } ?? []
         for n in codex.map({ HookNeighbors.find(settings: $0) }) ?? [] where !neighbors.contains(n) { neighbors.append(n) }
         if neighbors != hookNeighbors { hookNeighbors = neighbors }
@@ -306,6 +312,47 @@ final class SessionStore: ObservableObject {
         } catch {
             lastError = error.localizedDescription
             AureoleLog.shared.log("Codex hook install failed: \(error.localizedDescription)")
+        }
+        refreshHookStatus()
+    }
+
+    /// Gemini CLI reads hooks from ~/.gemini/settings.json in Claude Code's shape. They only run in folders the
+    /// user has trusted in Gemini CLI.
+    func installGeminiHooks() { setGeminiHooks(installed: true) }
+    func uninstallGeminiHooks() { setGeminiHooks(installed: false) }
+
+    private func setGeminiHooks(installed: Bool) {
+        do {
+            installHelperIfNeeded()
+            let url = GeminiHooks.settingsURL
+            let current = try HookInstaller.read(url: url)
+            let merged = HookInstaller.merge(settings: current, helperPath: Self.helperURL.path, install: installed,
+                                             events: GeminiHooks.events, arguments: " " + GeminiHooks.flag, millisecondTimeouts: true)
+            guard !NSDictionary(dictionary: merged).isEqual(to: current) else { refreshHookStatus(); return }
+            try HookInstaller.write(merged, url: url)
+            lastError = nil
+            AureoleLog.shared.log(installed ? "Gemini CLI hooks installed" : "Gemini CLI hooks removed")
+        } catch {
+            lastError = error.localizedDescription
+            AureoleLog.shared.log("Gemini CLI hook install failed: \(error.localizedDescription)")
+        }
+        refreshHookStatus()
+    }
+
+    /// opencode loads plugin files from ~/.config/opencode/plugins; Aureole's forwards events to the helper.
+    func setOpencodePlugin(installed: Bool) {
+        do {
+            if installed {
+                installHelperIfNeeded()
+                try OpencodePlugin.install(helperPath: Self.helperURL.path)
+            } else {
+                try OpencodePlugin.remove()
+            }
+            lastError = nil
+            AureoleLog.shared.log(installed ? "opencode plugin installed" : "opencode plugin removed")
+        } catch {
+            lastError = error.localizedDescription
+            AureoleLog.shared.log("opencode plugin install failed: \(error.localizedDescription)")
         }
         refreshHookStatus()
     }

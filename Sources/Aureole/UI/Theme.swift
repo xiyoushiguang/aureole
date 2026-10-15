@@ -13,11 +13,16 @@ enum Theme {
     static let dim = Color.white.opacity(0.42)
     static let faint = Color.white.opacity(0.22)
 
+    static let gemini = Color(hex: 0xF08BC0)
+    static let opencode = Color(hex: 0xB8C4D6)
+
     static func accent(_ p: ProviderID) -> Color {
         switch p {
         case .claude: return claude
         case .codex: return codex
         case .task: return task
+        case .gemini: return gemini
+        case .opencode: return opencode
         }
     }
 

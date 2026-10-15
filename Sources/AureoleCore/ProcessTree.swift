@@ -82,6 +82,9 @@ public enum ProcessTree {
         if let first = rest.first(where: { !$0.hasPrefix("-") }), first == "exec" || first == "e" {
             return args.first.map { ($0 as NSString).lastPathComponent.hasPrefix("codex") } ?? false
         }
+        // `opencode run "…"` answers one prompt and exits.
+        if args.first.map({ ($0 as NSString).lastPathComponent == "opencode" }) == true,
+           rest.first(where: { !$0.hasPrefix("-") }) == "run" { return true }
         return false
     }
 

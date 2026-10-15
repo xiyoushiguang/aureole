@@ -6,6 +6,7 @@ struct SettingsView: View {
     @ObservedObject var settings: SettingsStore
     @ObservedObject var store: UsageStore
     @ObservedObject var sessions: SessionStore
+    @ObservedObject var ledger: LedgerStore
     var openWelcome: () -> Void = {}
     var uninstall: () -> Void = {}
 
@@ -15,6 +16,7 @@ struct SettingsView: View {
             ProvidersTab(settings: settings, store: store).tabItem { Label(L10n.t("Providers"), systemImage: "person.2") }
             SessionsTab(settings: settings, sessions: sessions).tabItem { Label(L10n.t("Sessions"), systemImage: "terminal") }
             ChannelsTab(settings: settings, store: store).tabItem { Label(L10n.t("Notifications"), systemImage: "bell") }
+            SpendTab(ledger: ledger).tabItem { Label(L10n.t("Spend"), systemImage: "chart.bar") }
         }
         .frame(minWidth: 560, minHeight: 460)
         .padding(12)
@@ -169,6 +171,26 @@ struct SessionsTab: View {
                     }
                 }
                 Text(L10n.t("Adds the same helper to ~/.codex/hooks.json. Codex asks you to trust it once: the desktop app prompts at startup; in the CLI, run /hooks."))
+                    .font(.caption).foregroundStyle(.secondary)
+                LabeledContent(L10n.t("Gemini CLI hooks")) {
+                    HStack(spacing: 10) {
+                        Text(L10n.t(sessions.geminiHookStatus == .notInstalled ? "Not installed" : "On")).foregroundStyle(.secondary)
+                        if sessions.geminiHookStatus == .notInstalled {
+                            Button(L10n.t("Install")) { sessions.installGeminiHooks() }
+                        } else {
+                            Button(L10n.t("Remove")) { sessions.uninstallGeminiHooks() }
+                        }
+                    }
+                }
+                LabeledContent(L10n.t("opencode plugin")) {
+                    HStack(spacing: 10) {
+                        Text(L10n.t(sessions.opencodeInstalled ? "On" : "Not installed")).foregroundStyle(.secondary)
+                        Button(L10n.t(sessions.opencodeInstalled ? "Remove" : "Install")) {
+                            sessions.setOpencodePlugin(installed: !sessions.opencodeInstalled)
+                        }
+                    }
+                }
+                Text(L10n.t("Gemini CLI: the helper goes into ~/.gemini/settings.json and runs only in folders you trust in Gemini CLI. opencode: a small plugin file in ~/.config/opencode/plugins; restart opencode after adding it. Both show sessions and token use; approving from the panel works with Claude Code and Codex only."))
                     .font(.caption).foregroundStyle(.secondary)
                 LabeledContent(L10n.t("Usage from the status line")) {
                     HStack(spacing: 10) {

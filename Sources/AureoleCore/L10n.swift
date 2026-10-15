@@ -64,7 +64,7 @@ public enum L10n {
         "Runs out %@": "%@ 用完", "%@ before the %@ reset": "比 %2$@ 重置早 %1$@", "Lasts until the %@ reset": "够用到 %@ 重置",
         "5-hour": "5 小时", "weekly": "本周", "Now %@": "现在 %@", "%@ start": "%@ 开始", "%@ reset": "%@ 重置",
         "No quota here, about %@": "这段没有额度，约 %@", "Steady pace": "匀速用完的线",
-        "Claude working": "Claude 在干活", "Codex working": "Codex 在干活", "Waiting on you": "在等你",
+        "Claude working": "Claude 在干活", "Codex working": "Codex 在干活", "%@ working": "%@ 在干活", "Waiting on you": "在等你",
         "Small ring = context used": "小环是上下文占用", "context %d%%": "上下文 %d%%", "Context": "上下文",
         "%@ needs your approval": "%@ 待你批准", "%@ has a question for you": "%@ 待你回答", "%@ is done": "%@ 已完成", "Finished after %@": "用时 %@",
         "Done %d": "完成 %d", "done": "完成", "done · unseen": "完成·未查看",
@@ -104,7 +104,7 @@ public enum L10n {
         "Allow once": "允许这一次", "Always allow": "以后都允许",
         "Allows this now and adds the rule %@ to Claude Code's permissions, as its own prompt would.": "这次放行，并把规则 %@ 加进 Claude Code 的权限设置，和它自己弹窗里的「以后都允许」一样。",
         "Allowed, and from now on without asking. %@ carries on.": "已允许，以后不再问。%@ 继续干活。",
-        "folder %@": "目录 %@", "%d%% of quota": "占额度 %d%%", "%@ tokens": "%@ tokens", "cache %d%%": "缓存命中 %d%%",
+        "folder %@": "可访问 %@ 文件夹", "accept edits": "自动接受编辑", "%@ (this session)": "%@（仅本会话）", "%d%% of quota": "占额度 %d%%", "%@ tokens": "%@ tokens", "cache %d%%": "缓存命中 %d%%",
         "Tokens": "用量", "Open": "打开", "running": "运行中", "Used by": "谁用的", "other": "其他",
         "≈%@ at API prices": "按 API 价 ≈%@",
         "At public API prices. With a subscription this is what the work would have cost, not what you paid.": "按厂商公开的 API 价格折算。订阅用户实际并没有付这笔钱，这是这些活按 API 计费会花多少。",
@@ -158,7 +158,7 @@ public enum L10n {
         "Extra headers (Key: Value; Key2: Value2)": "额外请求头（Key: Value; Key2: Value2）", "JSON body template": "JSON 请求体模板",
         // channels
         "macOS Notification": "macOS 系统通知", "Feishu / Lark": "飞书 / Lark", "DingTalk": "钉钉", "WeCom": "企业微信",
-        "ServerChan (WeChat)": "Server酱（微信）", "Custom webhook": "自定义 Webhook", "Shell script": "Shell 脚本",
+        "WeChat": "微信", "Custom webhook": "自定义 Webhook", "Shell script": "Shell 脚本",
         "Uses Notification Center. Allow notifications when macOS asks.": "使用通知中心，macOS 询问时请允许。",
         "Channel settings → Integrations → Webhooks → copy URL.": "频道设置 → 整合 → Webhook → 复制地址。",
         "Incoming Webhook URL from api.slack.com/apps.": "在 api.slack.com/apps 创建 Incoming Webhook 并复制地址。",
@@ -168,7 +168,7 @@ public enum L10n {
         "Group robot webhook URL.": "群机器人 Webhook 地址。",
         "Topic URL, e.g. https://ntfy.sh/my-aureole.": "主题地址，例如 https://ntfy.sh/my-aureole。",
         "Server URL (default https://api.day.app) and your device key.": "服务器地址（默认 https://api.day.app）和你的设备密钥。",
-        "SendKey from sct.ftqq.com; delivers to WeChat.": "在 sct.ftqq.com 获取 SendKey，消息推送到微信。",
+        "Personal WeChat has no push API for apps, so messages go through ServerChan, a third-party relay: follow its official account at sct.ftqq.com and paste the SendKey it gives you. Its free plan limits messages per day.": "个人微信没有给软件用的推送接口，消息要经第三方中转服务 Server酱：在 sct.ftqq.com 扫码关注它的公众号，把拿到的 SendKey 填在这里。免费版每天的条数有上限。",
         "POST with a JSON template. Placeholders: {{title}} {{body}} {{event}} {{provider}} {{percent}}.": "以 JSON 模板 POST。占位符：{{title}} {{body}} {{event}} {{provider}} {{percent}}。",
         "Path to an executable. Receives AUREOLE_* env vars and a JSON event on stdin.": "可执行文件路径。通过 AUREOLE_* 环境变量和 stdin 上的 JSON 接收事件。",
         // provider errors
@@ -218,7 +218,17 @@ public enum L10n {
         "Update to %@ ›": "更新到 %@ ›",
         "Downloads, checks and installs the new version, then reopens Aureole.": "下载、校验并安装新版本，然后重新打开 Aureole。",
         "Uninstall Aureole?": "要卸载 Aureole 吗？",
-        "This removes Aureole's hooks from ~/.claude/settings.json and ~/.codex/hooks.json, puts back the status line you had before, turns off launch at login, moves Aureole's data, logs and the app to the Trash, and quits. Your other hooks and settings are kept.": "将从 ~/.claude/settings.json 和 ~/.codex/hooks.json 里移除 Aureole 的 hooks，恢复你原来的状态栏，关闭登录时启动，把 Aureole 的数据、日志和 app 本身移到废纸篓，然后退出。你自己的其他 hooks 和设置原样保留。",
+        "This removes Aureole's hooks from ~/.claude/settings.json, ~/.codex/hooks.json and ~/.gemini/settings.json, removes its opencode plugin, puts back the status line you had before, turns off launch at login, moves Aureole's data, logs and the app to the Trash, and quits. Your other hooks and settings are kept.": "将从 ~/.claude/settings.json、~/.codex/hooks.json、~/.gemini/settings.json 里移除 Aureole 的 hooks，删掉它的 opencode 插件，恢复你原来的状态栏，关闭登录时启动，把 Aureole 的数据、日志和 app 本身移到废纸篓，然后退出。你自己的其他 hooks 和设置原样保留。",
+        // spend history
+        "Spend": "花费", "Show": "范围", "30 days": "30 天", "90 days": "90 天", "1 year": "1 年",
+        "Reading the transcripts…": "正在读取会话记录…",
+        "No token use found in Claude Code or Codex transcripts yet.": "还没在 Claude Code 或 Codex 的会话记录里找到 token 用量。",
+        "%@ at API prices over these days, about %@ a day on days with use.": "这段时间按 API 价合计 %@，有用量的日子平均每天约 %@。",
+        "Values at public API prices, read from the transcripts on this Mac. A subscription costs what it costs; this shows how much work it covered. Kept for 400 days, or as far back as the transcripts go (sessions Codex has compressed into .zst archives are not read).":
+            "按官方 API 公开价折算，数据来自本机的会话记录。订阅费是固定的，这里看的是它替你干了多少活。最多保留 400 天，或会话记录能追溯到的最早一天（Codex 压缩成 .zst 的旧会话读不了）。",
+        "Gemini CLI hooks": "Gemini CLI hooks", "opencode plugin": "opencode 插件",
+        "Gemini CLI: the helper goes into ~/.gemini/settings.json and runs only in folders you trust in Gemini CLI. opencode: a small plugin file in ~/.config/opencode/plugins; restart opencode after adding it. Both show sessions and token use; approving from the panel works with Claude Code and Codex only.":
+            "Gemini CLI：辅助程序写进 ~/.gemini/settings.json，只在你于 Gemini CLI 里信任过的文件夹中运行。opencode：在 ~/.config/opencode/plugins 放一个小插件文件，装好后重启 opencode。两者都会显示会话和 token 用量；在面板里批准只支持 Claude Code 和 Codex。",
         "Uninstall": "卸载",
         "Cancel": "取消",
     ]
