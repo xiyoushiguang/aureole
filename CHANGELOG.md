@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 — 2026-10-15
 
 - **Gemini CLI and opencode.** Settings → Sessions installs Aureole's helper into Gemini CLI's hooks
   (`~/.gemini/settings.json`) or a small plugin for opencode (`~/.config/opencode/plugins/aureole.js`).
