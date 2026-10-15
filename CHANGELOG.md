@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 — 2026-10-14
 
 - **Who used the quota.** The usage area on the horizon is split into one band per session, by what each
   session spent while the curve rose; a legend under the arc and each lane give the share. An estimate,
