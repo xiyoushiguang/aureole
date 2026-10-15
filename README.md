@@ -82,7 +82,13 @@ Grab `Aureole-<version>.dmg` from the Releases page and drag Aureole to Applicat
 
 Releases from 0.4.0 on are signed with a Developer ID and notarized by Apple, so they open like any
 other app. (0.3.0 and earlier were not: if you still have one, macOS 15 needs **System Settings →
-Privacy & Security → Open Anyway** once.) A Homebrew tap may follow.
+Privacy & Security → Open Anyway** once.)
+
+### Homebrew
+
+```bash
+brew install --cask xiyoushiguang/tap/aureole
+```
 
 ### Updating
 

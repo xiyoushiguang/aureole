@@ -67,7 +67,13 @@ open build/Aureole.app
 从 Releases 页面下载 `Aureole-<版本>.dmg`，把 Aureole 拖进「应用程序」。
 
 从 0.4.0 起，发行版使用 Developer ID 签名并经过苹果公证，下载后像普通 app 一样直接打开。
-（0.3.0 及更早的版本未经公证：macOS 15 上需要去 **系统设置 → 隐私与安全性** 点一次 **仍要打开**。）之后可能会提供 Homebrew tap。
+（0.3.0 及更早的版本未经公证：macOS 15 上需要去 **系统设置 → 隐私与安全性** 点一次 **仍要打开**。）
+
+### Homebrew
+
+```bash
+brew install --cask xiyoushiguang/tap/aureole
+```
 
 ### 更新
 
