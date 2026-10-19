@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import Network
 import UserNotifications
 import AureoleCore
 
@@ -30,6 +31,8 @@ final class UsageStore: ObservableObject {
     private var lastSummary: [ProviderID: String] = [:]
     private static let snapshotsURL = AureolePaths.appSupport.appendingPathComponent("snapshots.json")
     private var cancellables: Set<AnyCancellable> = []
+    private var pathMonitor: NWPathMonitor?
+    private var lastPath: String?
 
     init(settings: SettingsStore, demo: Bool = false) {
         self.settings = settings
@@ -84,6 +87,41 @@ final class UsageStore: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
+        watchConnectivity()
+    }
+
+    /// After a wake or a network change (Wi-Fi, VPN, proxy app), a provider that failed is asked again
+    /// within seconds instead of waiting out a back-off of up to 15 minutes.
+    private func watchConnectivity() {
+        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.retryFailed(reason: "wake") } }
+            .store(in: &cancellables)
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            let key = path.status == .satisfied
+                ? "up " + path.availableInterfaces.map(\.name).joined(separator: ",")
+                : "down"
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let previous = self.lastPath
+                self.lastPath = key
+                if previous != nil, previous != key, path.status == .satisfied { self.retryFailed(reason: "network change") }
+            }
+        }
+        monitor.start(queue: DispatchQueue(label: "app.aureole.path"))
+        pathMonitor = monitor
+    }
+
+    private func retryFailed(reason: String) {
+        var asked: [String] = []
+        for id in ProviderID.allCases where settings.isEnabled(id) {
+            guard case .error? = status[id] else { continue }
+            backoff[id] = nil
+            // Give the new route a few seconds to settle.
+            nextDue[id] = Date().addingTimeInterval(3)
+            asked.append(id.displayName)
+        }
+        if !asked.isEmpty { AureoleLog.shared.log("\(reason): retrying \(asked.joined(separator: ", ")) shortly") }
     }
 
     private func settingsChanged() {

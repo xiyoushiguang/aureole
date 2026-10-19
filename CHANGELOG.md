@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.1 — 2026-10-18
+
+- Fixed: behind a local proxy or VPN app, both providers could fail for hours with "bad URL" after a
+  network change. A failed request is now tried once more on a fresh connection, which reads the
+  current proxy settings.
+- After a wake or a network change, a provider that failed is asked again within seconds instead of
+  waiting out a back-off of up to 15 minutes.
+- Network and proxy failures read as such ("Network or proxy problem (…). Refreshes by itself once the
+  connection is back.") instead of the bare system message.
+
 ## 0.7.0 — 2026-10-15
 
 - **Gemini CLI and opencode.** Settings → Sessions installs Aureole's helper into Gemini CLI's hooks

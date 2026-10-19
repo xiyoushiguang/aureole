@@ -43,6 +43,7 @@ public enum L10n {
         "now": "现在", "<1m": "<1分", "%dm": "%d分", "%dh": "%d小时", "%dh %dm": "%d小时%d分",
         "%dd": "%d天", "%dd %dh": "%d天%d小时",
         "just now": "刚刚", "%@ ago": "%@前",
+        "Network or proxy problem (%@). Refreshes by itself once the connection is back.": "网络或代理异常（%@）。连接恢复后会自动刷新。",
         // events
         "%@ %@ window at %d%%": "%@ %@额度已用 %d%%",
         "%@ %@ window reset": "%@ %@额度已重置",

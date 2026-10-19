@@ -93,3 +93,22 @@ final class RetryAfterTests: XCTestCase {
         XCTAssertEqual(parsed, 200, accuracy: 3)
     }
 }
+
+final class NetworkErrorTests: XCTestCase {
+    func testProxyAndNetworkFailuresReadAsNetworkProblems() {
+        for code in [URLError.Code.badURL, .cannotConnectToHost, .timedOut, .notConnectedToInternet] {
+            guard case .network? = HTTPClient.transportError(URLError(code)) as? ProviderError else {
+                return XCTFail("\(code) should be a network problem")
+            }
+        }
+        guard case .transport? = HTTPClient.transportError(URLError(.cancelled)) as? ProviderError else {
+            return XCTFail("cancelled is not a network problem")
+        }
+        XCTAssertEqual(HTTPClient.transportError(ProviderError.signedOut("x")) as? ProviderError, .signedOut("x"))
+    }
+
+    func testOnlyRouteFailuresRetryOnAFreshSession() {
+        XCTAssertTrue(HTTPClient.retriesOnFreshSession(.badURL))
+        XCTAssertFalse(HTTPClient.retriesOnFreshSession(.timedOut))
+    }
+}

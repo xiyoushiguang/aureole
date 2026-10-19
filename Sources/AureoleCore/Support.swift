@@ -27,16 +27,47 @@ enum HTTPClient {
 
     static func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw ProviderError.transport("Non-HTTP response")
+            return try await send(request, on: URLSession.shared)
+        } catch let e as URLError where retriesOnFreshSession(e.code) {
+            // A long-lived session can hold on to a proxy or route that a VPN or proxy app has since
+            // changed (seen as "bad URL" for hours through a local proxy). A fresh session reads the
+            // current settings.
+            let fresh = URLSession(configuration: .ephemeral)
+            defer { fresh.finishTasksAndInvalidate() }
+            do {
+                return try await send(request, on: fresh)
+            } catch {
+                throw transportError(error)
             }
-            return (data, http)
-        } catch let e as ProviderError {
-            throw e
         } catch {
-            throw ProviderError.transport(error.localizedDescription)
+            throw transportError(error)
         }
+    }
+
+    private static func send(_ request: URLRequest, on session: URLSession) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw ProviderError.transport("Non-HTTP response")
+        }
+        return (data, http)
+    }
+
+    static func retriesOnFreshSession(_ code: URLError.Code) -> Bool {
+        [.badURL, .cannotConnectToHost, .cannotFindHost, .networkConnectionLost, .secureConnectionFailed].contains(code)
+    }
+
+    /// Errors that mean the network or a proxy in between is the problem, not the vendor or the sign-in.
+    static func isNetworkProblem(_ code: URLError.Code) -> Bool {
+        retriesOnFreshSession(code) || [.notConnectedToInternet, .timedOut, .dnsLookupFailed,
+                                        .internationalRoamingOff, .dataNotAllowed].contains(code)
+    }
+
+    static func transportError(_ error: Error) -> Error {
+        if let e = error as? ProviderError { return e }
+        if let e = error as? URLError, isNetworkProblem(e.code) {
+            return ProviderError.network(e.localizedDescription)
+        }
+        return ProviderError.transport(error.localizedDescription)
     }
 }
 

@@ -129,6 +129,8 @@ public enum ProviderError: Error, LocalizedError, Equatable {
     case http(Int, String)
     case decode(String)
     case transport(String)
+    /// The network or a proxy failed; the vendor and the sign-in are fine as far as we know.
+    case network(String)
     case rateLimited(retryAfter: TimeInterval?)
 
     public var errorDescription: String? {
@@ -138,6 +140,7 @@ public enum ProviderError: Error, LocalizedError, Equatable {
         case .http(let code, let m): return "HTTP \(code): \(m)"
         case .decode(let m): return "Unexpected response: \(m)"
         case .transport(let m): return m
+        case .network(let m): return L10n.f("Network or proxy problem (%@). Refreshes by itself once the connection is back.", m)
         }
     }
 }
