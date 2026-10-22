@@ -462,6 +462,7 @@ enum TerminalJumper {
             if let url { NSWorkspace.shared.open(url) }
             return
         }
+        AureoleLog.shared.log("terminal jump: \(s.termProgram ?? s.bundleId ?? "unknown app") \(s.tty ?? "no tty") \(s.cwd)")
         if let tty = s.tty, let program = s.termProgram {
             let dev = "/dev/\(tty)"
             switch program {
@@ -471,13 +472,21 @@ enum TerminalJumper {
                     repeat with w in windows
                         repeat with t in tabs of w
                             if tty of t is "\(dev)" then
-                                set selected tab of w to t
-                                set index of w to 1
+                                -- Hold the window by id: "item n of windows" points elsewhere once the order changes.
+                                set target to window id (id of w)
+                                set selected tab of target to t
+                                -- Activate first: raising a window and then activating brings the last key window back on top.
                                 activate
-                                return
+                                if miniaturized of target then
+                                    set miniaturized of target to false
+                                    delay 0.4
+                                end if
+                                set index of target to 1
+                                return "ok"
                             end if
                         end repeat
                     end repeat
+                    return "no tab with \(dev)"
                 end tell
                 """)
             case "iTerm.app":
@@ -487,14 +496,18 @@ enum TerminalJumper {
                         repeat with t in tabs of w
                             repeat with s in sessions of t
                                 if tty of s is "\(dev)" then
+                                    try
+                                        if miniaturized of w then set miniaturized of w to false
+                                    end try
                                     select t
                                     select s
                                     activate
-                                    return
+                                    return "ok"
                                 end if
                             end repeat
                         end repeat
                     end repeat
+                    return "no session with \(dev)"
                 end tell
                 """)
             default:
@@ -575,12 +588,18 @@ enum TerminalJumper {
         p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         p.arguments = ["-e", script]
         let err = Pipe()
+        let out = Pipe()
         p.standardError = err
-        p.standardOutput = FileHandle.nullDevice
+        p.standardOutput = out
         p.terminationHandler = { proc in
-            guard proc.terminationStatus != 0 else { return }
-            let msg = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-            AureoleLog.shared.log("terminal jump failed: \(msg.trimmingCharacters(in: .whitespacesAndNewlines))")
+            let pipe = proc.terminationStatus == 0 ? out : err
+            let msg = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if proc.terminationStatus != 0 {
+                AureoleLog.shared.log("terminal jump failed: \(msg)")
+            } else if !msg.isEmpty, msg != "ok" {
+                AureoleLog.shared.log("terminal jump: \(msg)")
+            }
         }
         do {
             try p.run()

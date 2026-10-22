@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.2 — 2026-10-21
+
+- Fixed: clicking a lane whose Terminal window is minimized now brings the window back and to the front
+  (it stayed in the Dock), and the window is no longer pushed back behind the one that was in front.
+- iTerm2 windows are restored from the Dock too.
+- Every jump to a terminal is logged with its target and outcome, so a click that seems to do nothing
+  can be traced.
+
 ## 0.7.1 — 2026-10-18
 
 - Fixed: behind a local proxy or VPN app, both providers could fail for hours with "bad URL" after a
