@@ -236,6 +236,7 @@ struct OpenNotchView: View {
         HStack(spacing: 14) {
             Button(L10n.t("Refresh")) { actions?.refreshNow() }
             Button(L10n.t("Settings…")) { actions?.openSettings() }
+            Button(L10n.t("Quit")) { actions?.quit() }
             UpdateLink()
             Spacer()
             Button(L10n.t(model.pinned ? "Unpin" : "Pin")) { actions?.togglePinned() }

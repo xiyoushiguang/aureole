@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
             return
         }
         AureoleLog.shared.log("Aureole \(AureoleInfo.version) launched" + (launch.isDemo ? " (demo)" : ""))
+        installMainMenu()
         if launch.isDemo { loadDemo() }
         statusItem = StatusItemController(store: store, settings: settings, actions: self)
         let controller = NotchController(store: store, sessions: sessions, ledger: ledger, settings: settings, actions: self)
@@ -61,6 +62,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.openWelcome() }
         }
         installDebugCommands()
+    }
+
+    /// An accessory app never shows a menu bar, but key equivalents still go through the main menu: without one,
+    /// ⌘Q does nothing in the Settings window and ⌘C / ⌘V / ⌘A do nothing in its text fields.
+    private func installMainMenu() {
+        let main = NSMenu()
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        appMenu.addItem(withTitle: "Quit Aureole", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appItem.submenu = appMenu
+        main.addItem(appItem)
+        let editItem = NSMenuItem()
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = edit
+        main.addItem(editItem)
+        NSApp.mainMenu = main
     }
 
     /// Sample numbers and sessions instead of the real ones (`--demo`).

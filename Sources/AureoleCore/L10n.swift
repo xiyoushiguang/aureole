@@ -53,7 +53,7 @@ public enum L10n {
         "Fresh window": "新窗口已开始", ", next reset %@": "，下次重置 %@",
         "At the current pace it hits 100%% around %@": "按当前速度约在 %@ 用完", ", reset is %@": "，重置时间 %@",
         // panel
-        "route new work → %@": "新任务转给 %@", "Refresh": "刷新", "Settings…": "设置…", "Pin": "固定", "Unpin": "取消固定",
+        "route new work → %@": "新任务转给 %@", "Refresh": "刷新", "Settings…": "设置…", "Quit": "退出", "Pin": "固定", "Unpin": "取消固定",
         "Loading…": "加载中…", "No windows reported": "未返回额度窗口", "idle": "空闲",
         "≈%d%%/h": "≈%d%%/小时", " · empty %@, before reset": " · %@ 用完，早于重置", " · empty %@": " · %@ 用完",
         // sessions

@@ -241,6 +241,7 @@ struct HorizonPanel: View {
         HStack(spacing: 14) {
             Button(L10n.t("Refresh")) { actions?.refreshNow() }
             Button(L10n.t("Settings…")) { actions?.openSettings() }
+            Button(L10n.t("Quit")) { actions?.quit() }
             UpdateLink()
             Spacer()
             key(Theme.claude, L10n.t("Claude working"))

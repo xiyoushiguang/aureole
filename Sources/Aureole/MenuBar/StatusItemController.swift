@@ -52,6 +52,7 @@ final class StatusItemController: NSObject {
         item.menu = menu
         item.button?.imagePosition = .imageLeading
         item.button?.image = NSImage(systemSymbolName: "circle.lefthalf.filled", accessibilityDescription: "Aureole")
+        item.button?.toolTip = "Aureole"
         item.button?.font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
     }
 

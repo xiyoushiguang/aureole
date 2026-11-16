@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.3 — 2026-11-16
+
+- **Quit from the panel.** The panel's footer now has Quit next to Refresh and Settings…, in both layouts;
+  until now the only way out was the menu bar icon's menu, which is easy to miss (or hidden behind the
+  notch when the menu bar is full). Settings → General has a Quit Aureole button too.
+- ⌘Q quits while the Settings or welcome window is in front, ⌘W closes it, and ⌘C / ⌘V / ⌘X / ⌘A / ⌘Z
+  work in Settings' text fields (webhook URLs, keys). The app had no main menu, so these keys did nothing.
+- The menu bar icon shows "Aureole" when you hover it.
+
 ## 0.7.2 — 2026-10-21
 
 - Fixed: clicking a lane whose Terminal window is minimized now brings the window back and to the front

@@ -91,6 +91,7 @@ struct GeneralTab: View {
                 }
                 .help(L10n.t("Version, macOS, what is installed and recent errors, for a bug report. No tokens, prompts or session names."))
                 Spacer()
+                Button(L10n.t("Quit Aureole")) { NSApp.terminate(nil) }
                 Button(L10n.t("Uninstall Aureole…"), role: .destructive) { uninstall() }
             }
         }
