@@ -52,6 +52,22 @@ final class DecoderTests: XCTestCase {
         XCTAssertEqual(creds.expiresAt, Date(timeIntervalSince1970: 1_790_000_000))
     }
 
+    /// The endpoint reports a reset a fraction of a second to either side of the minute it falls on.
+    func testClaudeResetTimesLandOnTheMinute() throws {
+        let json = #"""
+        {"five_hour":{"utilization":22.0,"resets_at":"2026-11-17T04:59:59.870000+00:00"},
+         "seven_day":{"utilization":18.0,"resets_at":"2026-11-20T09:00:00.120000+00:00"},
+         "limits":[{"kind":"weekly_scoped","group":"weekly","percent":31,"resets_at":"2026-11-20T08:59:59.640000+00:00",
+                    "scope":{"model":{"id":null,"display_name":"Fable"},"surface":null}}]}
+        """#
+        let snap = try ClaudeUsageDecoder.decode(Data(json.utf8), plan: "max")
+        let iso = ISO8601DateFormatter()
+        XCTAssertEqual(snap.session?.resetsAt, iso.date(from: "2026-11-17T05:00:00Z"))
+        XCTAssertEqual(snap.weekly?.resetsAt, iso.date(from: "2026-11-20T09:00:00Z"))
+        XCTAssertEqual(snap.extras.first?.resetsAt, iso.date(from: "2026-11-20T09:00:00Z"))
+        XCTAssertNil(ClaudeUsageDecoder.wholeMinute(nil))
+    }
+
     func testHexDecode() {
         XCTAssertEqual(Data(hexString: "7b7d"), Data("{}".utf8))
         XCTAssertNil(Data(hexString: "zz"))

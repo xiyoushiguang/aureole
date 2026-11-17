@@ -42,6 +42,62 @@ final class StatuslineTests: XCTestCase {
         XCTAssertEqual(merged.windows.first { $0.key == "seven_day_opus" }?.usedPercent, 46)   // kept
     }
 
+    /// A status line that is a step behind must not take the number back down.
+    func testStatusLineNeverLowersANumberWithinTheSameWindow() {
+        let reset5h = now + 3600, resetWeek = now + 300_000
+        func feed(_ five: Double, _ week: Double, at: Date) -> StatuslineFeed {
+            StatuslineFeed(at: at, sessionId: "s", fiveHour: .init(usedPercent: five, resetsAt: reset5h),
+                           sevenDay: .init(usedPercent: week, resetsAt: resetWeek))
+        }
+        // What the endpoint just said, with its reset times a second short of the status line's.
+        let endpoint = ProviderSnapshot(provider: .claude, windows: [
+            UsageWindow(key: "five_hour", label: "5h", kind: .fiveHour, usedPercent: 22, resetsAt: reset5h - 1, duration: 5 * 3600),
+            UsageWindow(key: "seven_day", label: "Week", kind: .sevenDay, usedPercent: 18, resetsAt: resetWeek - 1, duration: 7 * 86400),
+        ], fetchedAt: now, planLabel: "Max")
+
+        let behind = feed(21, 17, at: now + 5).merged(into: endpoint)
+        XCTAssertEqual(behind.session?.usedPercent, 22, "the older, lower number is not taken")
+        XCTAssertEqual(behind.weekly?.usedPercent, 18)
+        XCTAssertEqual(behind.session?.resetsAt, reset5h - 1, "and nothing else about the window changes")
+        XCTAssertEqual(behind.fetchedAt, now + 5)
+
+        let level = feed(22, 18, at: now + 10).merged(into: behind)
+        XCTAssertEqual(level.session?.usedPercent, 22)
+
+        let ahead = feed(23, 18, at: now + 20).merged(into: level)
+        XCTAssertEqual(ahead.session?.usedPercent, 23, "a higher number is news")
+        // Another session's status line, drawn later but last told less.
+        XCTAssertEqual(feed(22, 18, at: now + 30).merged(into: ahead).session?.usedPercent, 23)
+    }
+
+    func testANewWindowStartsLowAgain() {
+        let old = ProviderSnapshot(provider: .claude, windows: [
+            UsageWindow(key: "five_hour", label: "5h", kind: .fiveHour, usedPercent: 80, resetsAt: now + 60, duration: 5 * 3600),
+        ], fetchedAt: now, planLabel: nil)
+        // After the reset the next window is reported with a different reset time: its low number is real.
+        let next = StatuslineFeed(at: now + 600, sessionId: "s", fiveHour: .init(usedPercent: 2, resetsAt: now + 600 + 5 * 3600))
+        XCTAssertEqual(next.merged(into: old).session?.usedPercent, 2)
+        // So is the first number for a window that had no reset time yet (nothing used since the last reset).
+        let empty = ProviderSnapshot(provider: .claude, windows: [
+            UsageWindow(key: "five_hour", label: "5h", kind: .fiveHour, usedPercent: 0, resetsAt: nil, duration: 5 * 3600),
+        ], fetchedAt: now, planLabel: nil)
+        XCTAssertEqual(next.merged(into: empty).session?.usedPercent, 2)
+    }
+
+    func testAWindowThatWasAlreadyOverIsNotTaken() {
+        // A session that has been idle since before the reset still draws its status line with the old window.
+        let rolled = ProviderSnapshot(provider: .claude, windows: [
+            UsageWindow(key: "five_hour", label: "5h", kind: .fiveHour, usedPercent: 0, resetsAt: nil, duration: 5 * 3600),
+            UsageWindow(key: "seven_day", label: "Week", kind: .sevenDay, usedPercent: 30, resetsAt: now + 86400, duration: 7 * 86400),
+        ], fetchedAt: now, planLabel: nil)
+        let lateDraw = StatuslineFeed(at: now + 120, sessionId: "idle", fiveHour: .init(usedPercent: 91, resetsAt: now - 300),
+                                      sevenDay: .init(usedPercent: 31, resetsAt: now + 86400))
+        let merged = lateDraw.merged(into: rolled)
+        XCTAssertEqual(merged.session?.usedPercent, 0, "last window's 91% is not this window's")
+        XCTAssertNil(merged.session?.resetsAt)
+        XCTAssertEqual(merged.weekly?.usedPercent, 31, "the weekly window is still running, so its number counts")
+    }
+
     func testInstallChainsAnExistingStatusLineAndRemovalRestoresIt() {
         let mine: [String: Any] = ["type": "command", "command": "~/.claude/statusline.sh", "padding": 2]
         let (installed, original) = StatuslineInstaller.install(settings: ["statusLine": mine, "model": "opus"], helperPath: "/A B/aureole-hook")

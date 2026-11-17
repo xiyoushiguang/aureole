@@ -74,18 +74,29 @@ public struct StatuslineFeed: Codable, Equatable, Sendable {
 
     /// The Claude snapshot with the 5-hour and weekly windows replaced by this feed's numbers; the other
     /// windows (per-model weeklies, extra usage) stay as the endpoint last reported them.
+    ///
+    /// The status line carries what the session's last reply said, stamped with the time it was drawn, so it
+    /// can be a step behind the endpoint or another session's status line. Within one window usage only grows:
+    /// a lower number for the same window is that lag and is not taken, or the number would step back and
+    /// forth. A window that had already reset when the status line was drawn says nothing about now either.
     public func merged(into snap: ProviderSnapshot?) -> ProviderSnapshot {
         var windows = snap?.windows ?? []
         func put(_ w: UsageWindow) {
             if let i = windows.firstIndex(where: { $0.key == w.key }) { windows[i] = w } else { windows.append(w) }
         }
+        func putQuota(_ w: UsageWindow) {
+            guard let reset = w.resetsAt, reset > at else { return }
+            if let known = windows.first(where: { $0.key == w.key }), known.resetsAt != nil,
+               Predictor.sameCycle(known.resetsAt, w.resetsAt), known.usedPercent > w.usedPercent { return }
+            put(w)
+        }
         if let l = fiveHour {
-            put(UsageWindow(key: "five_hour", label: "5h", kind: .fiveHour, usedPercent: l.usedPercent,
-                            resetsAt: l.resetsAt, duration: 5 * 3600))
+            putQuota(UsageWindow(key: "five_hour", label: "5h", kind: .fiveHour, usedPercent: l.usedPercent,
+                                 resetsAt: l.resetsAt, duration: 5 * 3600))
         }
         if let l = sevenDay {
-            put(UsageWindow(key: "seven_day", label: "Week", kind: .sevenDay, usedPercent: l.usedPercent,
-                            resetsAt: l.resetsAt, duration: 7 * 86400))
+            putQuota(UsageWindow(key: "seven_day", label: "Week", kind: .sevenDay, usedPercent: l.usedPercent,
+                                 resetsAt: l.resetsAt, duration: 7 * 86400))
         }
         if let s = spend {
             put(UsageWindow(key: "spend_limit", label: "Spend", kind: .other, usedPercent: s.usedPercent,

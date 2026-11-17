@@ -77,7 +77,7 @@ public enum ClaudeUsageDecoder {
             guard let dict = value as? [String: Any] else { continue }
             guard let raw = dict["utilization"], !(raw is NSNull) else { continue }
             guard let used = (raw as? NSNumber)?.doubleValue else { continue }
-            let resets = DateParsing.parse(dict["resets_at"])
+            let resets = wholeMinute(DateParsing.parse(dict["resets_at"]))
             let (label, kind, duration) = describe(key: key)
             // Anthropic ships feature-flag windows under codenames with no reset date; they carry no information.
             // Extra usage (paid overage) has no reset date either, but it is real money, so it stays.
@@ -89,7 +89,7 @@ public enum ClaudeUsageDecoder {
             for entry in limits {
                 guard let used = (entry["percent"] as? NSNumber)?.doubleValue else { continue }
                 let group = entry["group"] as? String ?? ""
-                let resets = DateParsing.parse(entry["resets_at"])
+                let resets = wholeMinute(DateParsing.parse(entry["resets_at"]))
                 let scopeName = ((entry["scope"] as? [String: Any])?["model"] as? [String: Any])?["display_name"] as? String
                 let isSession = group == "session"
                 let duration: TimeInterval = isSession ? 5 * 3600 : 7 * 86400
@@ -109,6 +109,13 @@ public enum ClaudeUsageDecoder {
         }
         windows.sort { order($0) < order($1) }
         return ProviderSnapshot(provider: .claude, windows: windows, fetchedAt: now, planLabel: plan.map(planName))
+    }
+
+    /// Windows reset on the minute, but the endpoint reports the moment a fraction of a second to either side
+    /// of it (04:59:59.9, 05:00:00.1), while Claude Code's status line says 05:00:00. Left as reported, the
+    /// reset time on show steps between 04:59 and 05:00 as the two sources take turns.
+    static func wholeMinute(_ date: Date?) -> Date? {
+        date.map { Date(timeIntervalSince1970: ($0.timeIntervalSince1970 / 60).rounded() * 60) }
     }
 
     static func describe(key: String) -> (String, WindowKind, TimeInterval?) {

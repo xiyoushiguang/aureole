@@ -19,6 +19,12 @@
 - **Far fewer disk writes.** The usage history and the token ledger were rewritten in full every few
   seconds while an agent worked (about 280 MB an hour, measured). They are now saved at most every five
   minutes and on quit; readings older than six hours are thinned to one per ten minutes per window.
+- **Numbers and reset times no longer step back and forth.** With the status line feed on, Claude's
+  percentage could drop a point and come back (the status line repeats what a session's last reply said,
+  which can be behind the endpoint), and the reset time alternated between 04:59 and 05:00 (the endpoint
+  reports it a fraction of a second off the minute). A status line reading no longer lowers a number
+  within the same window or brings back a window that has already reset, and reset times from the
+  endpoint are taken to the minute.
 - **A log that stays small.** A successful read is logged only when a number changed, a failure that
   repeats once when it starts and then once an hour, and the log file is moved aside at 1 MB
   (`aureole.log.1`, replaced each time).
