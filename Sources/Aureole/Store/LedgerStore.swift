@@ -2,7 +2,9 @@ import Foundation
 import AureoleCore
 
 /// Keeps the token ledger current: reads what the agents appended to their transcripts every 20 seconds, off the
-/// main thread, and saves where it stopped so a relaunch only reads what is new.
+/// main thread, and saves where it stopped so a relaunch only reads what is new. The file is rewritten whole,
+/// so it is saved at most every five minutes and when the app quits; counts and read positions are saved
+/// together, so a relaunch after a crash reads the unsaved stretch again rather than counting it twice.
 @MainActor
 final class LedgerStore: ObservableObject {
     @Published private(set) var ledger = TokenLedger() { didSet { sessionTotals = ledger.totals() } }
@@ -17,6 +19,10 @@ final class LedgerStore: ObservableObject {
     private let url = AureolePaths.appSupport.appendingPathComponent("ledger.json")
     /// Demo data, never scanned or saved.
     private var frozen = false
+    /// The ledger holds something the file does not.
+    private var dirty = false
+    private var lastSaved = Date()
+    static let saveInterval: TimeInterval = 5 * 60
 
     func start() {
         guard !frozen else { return }
@@ -66,18 +72,36 @@ final class LedgerStore: ObservableObject {
         guard ready, !scanning, !frozen else { return }
         scanning = true
         var copy = ledger
-        let url = url
         queue.async { [weak self] in
             let changed = LedgerScanner.scan(&copy, sources: LedgerScanner.sources(known: Set(copy.cursors.keys)))
-            if changed { Self.save(copy, to: url) }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.scanning = false
-                    if changed { self.ledger = copy }
+                    if changed {
+                        self.ledger = copy
+                        self.dirty = true
+                    }
+                    self.saveIfDue()
                 }
             }
         }
+    }
+
+    private func saveIfDue() {
+        guard dirty, !frozen, Date().timeIntervalSince(lastSaved) >= Self.saveInterval else { return }
+        dirty = false
+        lastSaved = Date()
+        let copy = ledger, url = url
+        queue.async { Self.save(copy, to: url) }
+    }
+
+    /// Writes what has not been saved yet, now. For when the app is about to quit.
+    func flush() {
+        guard dirty, !frozen else { return }
+        dirty = false
+        let copy = ledger, url = url
+        queue.sync { Self.save(copy, to: url) }
     }
 
     nonisolated private static func save(_ ledger: TokenLedger, to url: URL) {

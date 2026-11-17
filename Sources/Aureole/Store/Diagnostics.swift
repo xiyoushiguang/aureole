@@ -34,7 +34,10 @@ enum Diagnostics {
 
     /// Error lines from the log, without anything that names a session.
     static func recentProblems(limit: Int = 25) -> [String] {
-        guard let text = try? String(contentsOf: AureoleLog.shared.url, encoding: .utf8) else { return ["(no log)"] }
+        // The log is moved aside once it fills up; the problems asked about may be in the file before this one.
+        let files = [AureoleLog.shared.previousURL, AureoleLog.shared.url]
+        let text = files.compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+        guard !text.isEmpty else { return ["(no log)"] }
         let keys = ["failed", "rate limited", "error", "not allowed", "timed out", "Too late"]
         let hits = text.split(separator: "\n").filter { line in
             !line.contains("event session") && keys.contains { line.localizedCaseInsensitiveContains($0) }

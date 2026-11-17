@@ -1094,7 +1094,7 @@ struct HorizonHeadlineView: View {
                 Text(d + costSuffix).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(HorizonColor.label)
                     .help(windowCost == nil ? "" : L10n.t("At public API prices. With a subscription this is what the work would have cost, not what you paid."))
             }
-            if inputs.window == nil || status.message != nil {
+            if inputs.window == nil || status.message != nil || status.note != nil {
                 Text(placeholder(status)).font(.system(size: 11))
                     .foregroundStyle(status.message == nil ? HorizonColor.label : Theme.amber).lineLimit(2)
             }
@@ -1113,7 +1113,7 @@ struct HorizonHeadlineView: View {
         case .idle, .loading: return L10n.t("Loading…")
         case .ok: return L10n.t("No windows reported")
         case .rateLimited: return L10n.t("Rate limited")
-        case .signedOut(let m), .error(let m): return m
+        case .signedOut(let m), .error(let m), .expired(let m): return m
         }
     }
 }
@@ -1127,13 +1127,23 @@ struct SideNumber: View {
         VStack(alignment: .trailing, spacing: 3) {
             if let side = inputs.side, let w = store.snapshots[side]?.primary {
                 let h = HorizonHeadline(provider: side, window: w, prediction: store.predictions[side])
-                Text(Formatting.percent(w.usedPercent))
+                // A number that could not be refreshed for a while is grey with a question mark: old, not current.
+                let stale = store.stale.contains(side)
+                Text(Formatting.percent(w.usedPercent) + (stale ? "?" : ""))
                     .contentTransition(.numericText(value: w.usedPercent))
                     .animation(.snappy, value: Int(w.usedPercent.rounded()))
                     .font(.system(size: 26, weight: .bold).monospacedDigit())
-                    .foregroundStyle(h.tone == .warning ? Theme.amber : (side == .codex ? HorizonColor.codexBright : HorizonColor.claudeBright))
-                Text(side.displayName + " " + HorizonHeadline.windowName(w) + " · " + h.title)
-                    .font(.system(size: 11.5).monospacedDigit()).foregroundStyle(h.tone == .warning ? Theme.amber : .white.opacity(0.78))
+                    .foregroundStyle(stale ? Color.white.opacity(0.45)
+                                     : h.tone == .warning ? Theme.amber : (side == .codex ? HorizonColor.codexBright : HorizonColor.claudeBright))
+                if stale, let why = store.status[side]?.note ?? store.status[side]?.message {
+                    // "Lasts until Friday" is not something an old number can promise: say why it is old instead.
+                    Text(why).font(.system(size: 11)).multilineTextAlignment(.trailing).lineLimit(2)
+                        .foregroundStyle(store.status[side]?.message == nil ? HorizonColor.label : Theme.amber)
+                        .frame(maxWidth: 340, alignment: .trailing)
+                } else {
+                    Text(side.displayName + " " + HorizonHeadline.windowName(w) + " · " + h.title)
+                        .font(.system(size: 11.5).monospacedDigit()).foregroundStyle(h.tone == .warning ? Theme.amber : .white.opacity(0.78))
+                }
             } else if let side = inputs.side {
                 Text(side.displayName + " —").font(.system(size: 11.5)).foregroundStyle(HorizonColor.label)
             }

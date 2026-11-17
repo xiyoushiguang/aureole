@@ -84,6 +84,20 @@ public struct UsageWindow: Codable, Equatable, Identifiable, Sendable {
     public func paceDelta(now: Date = Date()) -> Double? {
         elapsedFraction(now: now).map { usedPercent - $0 * 100 }
     }
+
+    /// The window as it stands once its reset time has passed and nothing newer has been read: empty.
+    /// A 5-hour window only starts again with the next message, so it has no reset time until then; a
+    /// fixed-length window moves on to its next reset. Money windows are left alone: what was spent stays spent
+    /// until the vendor says otherwise.
+    public func rolledOver(now: Date = Date()) -> UsageWindow {
+        guard let reset = resetsAt, reset <= now, !isSpend else { return self }
+        var next: Date?
+        if kind != .fiveHour, let d = duration, d > 0 {
+            let cycles = (now.timeIntervalSince(reset) / d).rounded(.down) + 1
+            next = reset.addingTimeInterval(cycles * d)
+        }
+        return UsageWindow(key: key, label: label, kind: kind, usedPercent: 0, resetsAt: next, duration: duration)
+    }
 }
 
 public struct ProviderSnapshot: Codable, Equatable, Sendable {
@@ -105,6 +119,24 @@ public struct ProviderSnapshot: Codable, Equatable, Sendable {
     /// The window that best represents "how much is left right now": the session window,
     /// or the weekly one on plans that only meter weekly (e.g. some Codex tiers).
     public var primary: UsageWindow? { session ?? weekly ?? windows.first }
+
+    /// The same reading with every window that has reset since it was taken shown empty (see
+    /// `UsageWindow.rolledOver`). A reset time the vendor reported as already past is left as reported: the
+    /// number that came with it is newer than that reset. `fetchedAt` stays: nothing new has been read.
+    public func rolledOver(now: Date = Date()) -> ProviderSnapshot {
+        func due(_ w: UsageWindow) -> Bool {
+            guard let reset = w.resetsAt, !w.isSpend else { return false }
+            return reset > fetchedAt && reset <= now
+        }
+        guard windows.contains(where: due) else { return self }
+        return ProviderSnapshot(provider: provider, windows: windows.map { due($0) ? $0.rolledOver(now: now) : $0 },
+                                fetchedAt: fetchedAt, planLabel: planLabel)
+    }
+
+    /// The earliest reset among the windows that is still ahead of this reading.
+    public var nextReset: Date? {
+        windows.compactMap(\.resetsAt).filter { $0 > fetchedAt }.min()
+    }
 }
 
 public enum ProviderStatus: Equatable, Sendable {
@@ -115,11 +147,29 @@ public enum ProviderStatus: Equatable, Sendable {
     case error(String)
     /// The vendor's usage endpoint asked us to slow down; last data stays on screen.
     case rateLimited(until: Date)
+    /// The stored token has run out. The agent's own CLI renews it the next time it runs; until then there is
+    /// nothing to ask with. Not a fault, and never announced.
+    case expired(String)
 
+    /// What went wrong, when something did.
     public var message: String? {
         switch self {
         case .signedOut(let m), .error(let m): return m
         default: return nil
+        }
+    }
+
+    /// Something worth saying that is not a fault.
+    public var note: String? {
+        if case .expired(let m) = self { return m }
+        return nil
+    }
+
+    /// True while the last attempt to read did not bring numbers back.
+    public var isFailing: Bool {
+        switch self {
+        case .signedOut, .error, .rateLimited, .expired: return true
+        case .idle, .loading, .ok: return false
         }
     }
 }
@@ -132,11 +182,13 @@ public enum ProviderError: Error, LocalizedError, Equatable {
     /// The network or a proxy failed; the vendor and the sign-in are fine as far as we know.
     case network(String)
     case rateLimited(retryAfter: TimeInterval?)
+    /// The stored token is past its expiry time, so asking would only be refused.
+    case expired(String)
 
     public var errorDescription: String? {
         switch self {
         case .rateLimited: return L10n.t("Usage endpoint is rate limiting; backing off")
-        case .signedOut(let m): return m
+        case .signedOut(let m), .expired(let m): return m
         case .http(let code, let m): return "HTTP \(code): \(m)"
         case .decode(let m): return "Unexpected response: \(m)"
         case .transport(let m): return m

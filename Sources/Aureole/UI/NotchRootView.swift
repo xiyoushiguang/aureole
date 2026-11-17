@@ -92,7 +92,9 @@ struct ClosedNotchView: View {
         let window = store.snapshots[provider]?.primary
         let accent = Theme.accent(provider)
         let remaining = window.map { $0.remainingPercent / 100 } ?? 0
-        let color = window.map { Theme.state(for: $0, accent: accent) } ?? Color.white.opacity(0.25)
+        // Numbers that could not be refreshed for a while are drawn grey and without glow: old, not current.
+        let stale = store.stale.contains(provider)
+        let color = stale ? Color.white.opacity(0.38) : (window.map { Theme.state(for: $0, accent: accent) } ?? Color.white.opacity(0.25))
         let troubled = store.status[provider].map { if case .ok = $0 { return false } else { return true } } ?? false
         return GeometryReader { geo in
             ZStack(alignment: mirrored ? .trailing : .leading) {
@@ -103,7 +105,7 @@ struct ClosedNotchView: View {
                                              startPoint: mirrored ? .trailing : .leading,
                                              endPoint: mirrored ? .leading : .trailing))
                         .frame(width: max(4, geo.size.width * remaining))
-                        .shadow(color: color.opacity(0.8), radius: 3)
+                        .shadow(color: stale ? .clear : color.opacity(0.8), radius: 3)
                 } else if troubled {
                     Capsule().fill(Theme.amber.opacity(0.5)).frame(width: 6)
                 }
@@ -286,8 +288,8 @@ struct ProviderRow: View {
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                if snap != nil, let msg = status.message {
-                    Text(msg).font(.system(size: 10)).foregroundStyle(Theme.amber).lineLimit(1)
+                if snap != nil, let msg = status.message ?? status.note {
+                    Text(msg).font(.system(size: 10)).foregroundStyle(status.message == nil ? Theme.dim : Theme.amber).lineLimit(1)
                 }
                 if case .rateLimited(let until) = status {
                     TimelineView(.periodic(from: .now, by: 1)) { ctx in
@@ -305,7 +307,7 @@ struct ProviderRow: View {
         case .idle, .loading: return L10n.t("Loading…")
         case .ok: return L10n.t("No windows reported")
         case .rateLimited: return L10n.t("Rate limited")
-        case .signedOut(let m), .error(let m): return m
+        case .signedOut(let m), .error(let m), .expired(let m): return m
         }
     }
 
@@ -338,21 +340,21 @@ struct ProviderRow: View {
 }
 
 /// How old each provider's numbers are: "Claude just now · Codex 12m ago". Amber once a provider's numbers are
-/// more than ten minutes old, so a flaky network never passes stale numbers off as current.
+/// old because reading them keeps failing, so a flaky network or a lapsed sign-in never passes stale numbers
+/// off as current. (Numbers read a while ago with nobody at work are not stale: nothing has moved them.)
 struct FreshnessText: View {
     @ObservedObject var store: UsageStore
     let providers: [ProviderID]
-    static let staleAfter: TimeInterval = 10 * 60
 
     var body: some View {
         HStack(spacing: 6) {
             ForEach(providers, id: \.self) { id in
                 let at = store.snapshots[id]?.fetchedAt
-                let age = at.map { Date().timeIntervalSince($0) }
-                let stale = (age ?? 0) > Self.staleAfter
+                let stale = store.stale.contains(id)
+                let why = store.status[id]?.note ?? store.status[id]?.message
                 Text(id.displayName + " " + (at.map { SessionText.ago($0) } ?? "…"))
                     .foregroundStyle(stale ? Theme.amber : Theme.faint)
-                    .help(stale ? L10n.t("These numbers are old: the last refresh failed or was rate limited. They update by themselves once the connection is back.") : "")
+                    .help(stale ? (why ?? L10n.t("These numbers are old: the last refresh failed or was rate limited. They update by themselves once the connection is back.")) : "")
             }
         }
         .font(.system(size: 10, weight: .regular).monospacedDigit())

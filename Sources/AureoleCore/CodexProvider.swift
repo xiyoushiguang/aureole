@@ -5,6 +5,8 @@ import Foundation
 public struct CodexProvider: UsageProvider {
     public let id = ProviderID.codex
     public var codexHome: URL
+    /// See `ClaudeProvider.skipWhenExpired`.
+    public var skipWhenExpired = true
     public static let usageURL = URL(string: "https://chatgpt.com/backend-api/wham/usage")!
 
     public init(codexHome: URL? = nil) {
@@ -17,8 +19,14 @@ public struct CodexProvider: UsageProvider {
         }
     }
 
+    /// Where Codex keeps its sign-in. A change to this file means there may be a fresh token to try.
+    public var authURL: URL { codexHome.appendingPathComponent("auth.json") }
+
     public func fetch() async throws -> ProviderSnapshot {
-        let creds = try CodexCredentialReader.read(from: codexHome.appendingPathComponent("auth.json"))
+        let creds = try CodexCredentialReader.read(from: authURL)
+        let expired = creds.expiresAt.map { $0 <= Date() } ?? false
+        let waiting = ProviderError.expired(L10n.f("%@ token expired. It renews by itself the next time %@ runs.", "Codex", "Codex"))
+        if expired, skipWhenExpired { throw waiting }
         var req = URLRequest(url: Self.usageURL)
         req.timeoutInterval = 20
         req.setValue("Bearer \(creds.accessToken)", forHTTPHeaderField: "Authorization")
@@ -33,6 +41,7 @@ public struct CodexProvider: UsageProvider {
             DebugDump.write(data, name: "codex-usage.json")
             return try CodexUsageDecoder.decode(data)
         case 401, 403:
+            if expired { throw waiting }
             throw ProviderError.signedOut(L10n.f("Codex token was rejected (%d). Run `codex` once to refresh your sign-in.", http.statusCode))
         case 429:
             throw ProviderError.rateLimited(retryAfter: HTTPClient.retryAfter(http))
@@ -47,6 +56,8 @@ public struct CodexCredentials: Sendable {
     public let accessToken: String
     public let accountID: String?
     public let planFromToken: String?
+    /// When the access token stops being accepted (its `exp` claim), if it says.
+    public var expiresAt: Date? = nil
 }
 
 public enum CodexCredentialReader {
@@ -75,7 +86,8 @@ public enum CodexCredentialReader {
             if account == nil { account = auth?["chatgpt_account_id"] as? String }
             plan = auth?["chatgpt_plan_type"] as? String
         }
-        return CodexCredentials(accessToken: access, accountID: account, planFromToken: plan)
+        let exp = (JWT.payload(access)?["exp"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) }
+        return CodexCredentials(accessToken: access, accountID: account, planFromToken: plan, expiresAt: exp)
     }
 }
 

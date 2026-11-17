@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+- **No more "sign-in needed" for a token that simply ran out.** Claude Code and Codex renew their tokens
+  only when they run, so a stored token expires every few hours and the next one appears by itself.
+  Aureole now reads the token's expiry time: an expired token is not sent at all, the panel says
+  "token expired, renews the next time Claude Code runs", and nothing is pushed. A token that is refused
+  before its time is tried again every three minutes and only called a lost sign-in after twelve.
+- **Old numbers look old.** When a provider cannot be read for more than ten minutes, its arc under the
+  closed notch turns grey, its number in the menu bar and in the panel's corner gets a question mark,
+  and the panel says why instead of a forecast. A window whose reset time has passed shows empty rather
+  than the last percentage read before it.
+- **Asks again when there is a reason to.** Right after a reset; when Codex rewrites its sign-in file;
+  when the screen is unlocked or the display wakes; when an agent starts working; when the panel opens.
+- **Quiet when nobody is there.** With the screen locked or the display off and no agent at work, quotas
+  are read every 30 minutes instead of every 5; with nobody working but you at the screen, at most every
+  15. An agent at work keeps the usual pace.
+- **Far fewer disk writes.** The usage history and the token ledger were rewritten in full every few
+  seconds while an agent worked (about 280 MB an hour, measured). They are now saved at most every five
+  minutes and on quit; readings older than six hours are thinned to one per ten minutes per window.
+- **A log that stays small.** A successful read is logged only when a number changed, a failure that
+  repeats once when it starts and then once an hour, and the log file is moved aside at 1 MB
+  (`aureole.log.1`, replaced each time).
+
 ## 0.7.3 — 2026-11-16
 
 - **Quit from the panel.** The panel's footer now has Quit next to Refresh and Settings…, in both layouts;

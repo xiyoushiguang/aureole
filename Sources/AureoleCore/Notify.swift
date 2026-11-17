@@ -77,6 +77,12 @@ public struct EventDetector: Sendable {
     /// Persist this so a relaunch never re-sends. Reset times drift by a few seconds between fetches, so
     /// matching uses a tolerance rather than exact equality.
     public var sent: [String: Double]
+    /// How long a token has to keep being refused before it is called a lost sign-in. Most refusals end by
+    /// themselves within minutes, when the agent's own CLI writes a fresh token.
+    public var authGrace: TimeInterval = 12 * 60
+    private var refusedSince: [ProviderID: Date] = [:]
+    private var refusalArmed: Set<ProviderID> = []
+    private var refusalAnnounced: Set<ProviderID> = []
 
     public init(thresholds: [Int] = [80, 95], forecastMinimumPercent: Double = 40, sent: [String: Double] = [:]) {
         self.thresholds = thresholds.sorted()
@@ -116,9 +122,30 @@ public struct EventDetector: Sendable {
         return events
     }
 
-    public mutating func authLost(_ provider: ProviderID, message: String, now: Date = Date()) -> UsageEvent? {
-        // Re-arms after five minutes so a sign-in that keeps failing is mentioned again, but not every minute.
-        mark("\(provider.rawValue)|auth", cycle: now) ? .authLost(provider: provider, message: message) : nil
+    /// A token was refused. Says so once, and only when the refusals have lasted `authGrace` and began while
+    /// the provider was working (`wasWorking`, read on the first refusal of a run): a provider that was never
+    /// signed in has nothing to lose.
+    public mutating func refused(_ provider: ProviderID, message: String, wasWorking: Bool, now: Date = Date()) -> UsageEvent? {
+        if refusedSince[provider] == nil {
+            refusedSince[provider] = now
+            if wasWorking { refusalArmed.insert(provider) } else { refusalArmed.remove(provider) }
+        }
+        guard let since = refusedSince[provider], now.timeIntervalSince(since) >= authGrace,
+              refusalArmed.contains(provider), !refusalAnnounced.contains(provider) else { return nil }
+        refusalAnnounced.insert(provider)
+        return .authLost(provider: provider, message: message)
+    }
+
+    /// True from the first refusal until `authGrace` has passed: worth asking again soon.
+    public func refusalIsFresh(_ provider: ProviderID, now: Date = Date()) -> Bool {
+        refusedSince[provider].map { now.timeIntervalSince($0) < authGrace } ?? false
+    }
+
+    /// The provider answered, or its token simply ran out: the run of refusals is over.
+    public mutating func refusalsEnded(_ provider: ProviderID) {
+        refusedSince[provider] = nil
+        refusalArmed.remove(provider)
+        refusalAnnounced.remove(provider)
     }
 
     /// True the first time an event is seen for this cycle (reset time within five minutes of a recorded one).

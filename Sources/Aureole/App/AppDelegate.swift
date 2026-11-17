@@ -27,6 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
     private var settingsWindow: NSWindow?
     private var welcomeWindow: NSWindow?
     private var cancellables: Set<AnyCancellable> = []
+    /// Set once Uninstall has moved the data to the Trash, so quitting does not write it out again.
+    private var uninstalled = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if case .snapshot(let dir, let language) = launch {
@@ -48,6 +50,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
             DispatchQueue.main.async { self?.reattach() }
         }.store(in: &cancellables)
         sessions.onEvents = { [weak self] in self?.store.dispatch($0) }
+        // With an agent at work the quotas are read every few minutes; with none, and nobody at the screen, rarely.
+        store.agentsBusy = { [weak self] in self?.sessions.board.isBusy ?? false }
+        sessions.$board.map(\.isBusy).removeDuplicates().dropFirst().filter { $0 }.sink { [weak self] _ in
+            DispatchQueue.main.async { self?.store.nudge() }
+        }.store(in: &cancellables)
+        // Opening the panel is looking at the numbers: make sure they are current.
+        controller.onOpen = { [weak self] in self?.store.nudge() }
         store.start()
         sessions.start()
         ledger.start()
@@ -62,6 +71,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.openWelcome() }
         }
         installDebugCommands()
+    }
+
+    /// History and ledger are saved every few minutes, not on every reading; what is still only in memory is
+    /// written here.
+    func applicationWillTerminate(_ notification: Notification) {
+        guard case .normal = launch, !uninstalled else { return }
+        store.flush()
+        ledger.flush()
+        AureoleLog.shared.log("quit")
+        AureoleLog.shared.drain()
     }
 
     /// An accessory app never shows a menu bar, but key equivalents still go through the main menu: without one,
@@ -180,6 +199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
             try? fm.trashItem(at: url, resultingItemURL: nil)
         }
         if let id = Bundle.main.bundleIdentifier { UserDefaults.standard.removePersistentDomain(forName: id) }
+        uninstalled = true
         NSApp.terminate(nil)
     }
 

@@ -49,6 +49,7 @@ public enum L10n {
         "%@ %@ window reset": "%@ %@额度已重置",
         "%@ %@ will run out before reset": "%@ %@额度会在重置前用完",
         "%@ sign-in needed": "%@ 需要重新登录",
+        "%@ token expired. It renews by itself the next time %@ runs.": "%@ 令牌已到期，等 %@ 下次运行时会自动换新。",
         "Used %d%%": "已用 %d%%", ", resets %@": "，%@ 重置",
         "Fresh window": "新窗口已开始", ", next reset %@": "，下次重置 %@",
         "At the current pace it hits 100%% around %@": "按当前速度约在 %@ 用完", ", reset is %@": "，重置时间 %@",

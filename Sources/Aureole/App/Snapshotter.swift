@@ -11,11 +11,17 @@ enum Snapshotter {
         let name: String
         let open: Bool
         let focus: String?
+        /// A provider to show as unreadable with stale numbers, and how.
+        var trouble: (ProviderID, ProviderStatus)? = nil
     }
 
     static let shots = [Shot(name: "panel", open: true, focus: nil),
                         Shot(name: "panel-approval", open: true, focus: DemoData.billing),
-                        Shot(name: "closed", open: false, focus: nil)]
+                        Shot(name: "closed", open: false, focus: nil),
+                        Shot(name: "closed-stale", open: false, focus: nil,
+                             trouble: (.codex, .signedOut(L10n.f("Codex token was rejected (%d). Run `codex` once to refresh your sign-in.", 401)))),
+                        Shot(name: "panel-stale", open: true, focus: nil,
+                             trouble: (.codex, .expired(L10n.f("%@ token expired. It renews by itself the next time %@ runs.", "Codex", "Codex"))))]
 
     static func run(to dir: URL, language: Language) {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -61,6 +67,7 @@ enum Snapshotter {
         guard let shot = shots.first else { renderSpend(ledger: ledger, dir: dir, language: language); return }
         // The panel picks up a focused lane from the argument domain, as `-debugFocusLane` does on a real launch.
         UserDefaults.standard.setVolatileDomain(shot.focus.map { ["debugFocusLane": $0] } ?? [:], forName: UserDefaults.argumentDomain)
+        for id in ProviderID.allCases { store.loadDemoTrouble(id, shot.trouble?.0 == id ? shot.trouble?.1 : nil) }
         let model = NotchViewModel()
         model.geometry = .placeholder
         model.isOpen = shot.open

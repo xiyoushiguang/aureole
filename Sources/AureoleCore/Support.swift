@@ -103,32 +103,56 @@ public enum DateParsing {
     }
 }
 
-/// Minimal file logger (never log credentials).
+/// Minimal file logger (never log credentials). Once the file passes `maxBytes` it is moved aside as
+/// `aureole.log.1`, replacing the one before it, so the two together stay under twice that.
 public final class AureoleLog: @unchecked Sendable {
     public static let shared = AureoleLog()
     private let queue = DispatchQueue(label: "app.aureole.log")
     public let url: URL
+    public let maxBytes: UInt64
     private let formatter: DateFormatter
 
-    private init() {
+    /// The file the current one was moved to when it filled up.
+    public var previousURL: URL { url.appendingPathExtension("1") }
+
+    private convenience init() {
         let dir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs/Aureole", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        url = dir.appendingPathComponent("aureole.log")
+        self.init(url: dir.appendingPathComponent("aureole.log"))
+    }
+
+    init(url: URL, maxBytes: UInt64 = 1_000_000) {
+        self.url = url
+        self.maxBytes = maxBytes
         formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
     }
 
     public func log(_ message: String) {
         let line = "\(formatter.string(from: Date())) \(message)\n"
-        queue.async {
-            if let h = try? FileHandle(forWritingTo: self.url) {
-                h.seekToEndOfFile()
-                h.write(line.data(using: .utf8)!)
+        queue.async { self.write(line) }
+    }
+
+    /// Returns once every line logged so far is on disk.
+    public func drain() { queue.sync {} }
+
+    /// On `queue`.
+    private func write(_ line: String) {
+        let fm = FileManager.default
+        if let h = try? FileHandle(forWritingTo: url) {
+            let size = h.seekToEndOfFile()
+            if size >= maxBytes {
                 try? h.close()
-            } else {
-                try? line.data(using: .utf8)?.write(to: self.url)
+                try? fm.removeItem(at: previousURL)
+                try? fm.moveItem(at: url, to: previousURL)
+                try? line.data(using: .utf8)?.write(to: url)
+                return
             }
+            h.write(line.data(using: .utf8)!)
+            try? h.close()
+        } else {
+            try? line.data(using: .utf8)?.write(to: url)
         }
     }
 }

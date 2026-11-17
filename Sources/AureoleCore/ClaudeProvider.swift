@@ -21,6 +21,9 @@ public enum ClaudeCredentialSource: String, Codable, CaseIterable, Sendable {
 public struct ClaudeProvider: UsageProvider {
     public let id = ProviderID.claude
     public var credentialSource: ClaudeCredentialSource
+    /// With a token past its expiry time, do not ask at all. Off for the occasional probe that guards against
+    /// an expiry time that has stopped meaning what it says.
+    public var skipWhenExpired = true
 
     public static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
     static let betaHeader = "oauth-2025-04-20"
@@ -31,6 +34,11 @@ public struct ClaudeProvider: UsageProvider {
 
     public func fetch() async throws -> ProviderSnapshot {
         let creds = try ClaudeCredentialReader.read(source: credentialSource)
+        // Claude Code renews its token only when it runs. An expired one is refused; that says nothing about
+        // the sign-in, so it is reported as waiting, not as signed out.
+        let expired = creds.expiresAt.map { $0 <= Date() } ?? false
+        let waiting = ProviderError.expired(L10n.f("%@ token expired. It renews by itself the next time %@ runs.", "Claude", "Claude Code"))
+        if expired, skipWhenExpired { throw waiting }
         var req = URLRequest(url: Self.usageURL)
         req.timeoutInterval = 20
         req.setValue("Bearer \(creds.accessToken)", forHTTPHeaderField: "Authorization")
@@ -43,6 +51,7 @@ public struct ClaudeProvider: UsageProvider {
             DebugDump.write(data, name: "claude-usage.json")
             return try ClaudeUsageDecoder.decode(data, plan: creds.subscriptionType)
         case 401, 403:
+            if expired { throw waiting }
             throw ProviderError.signedOut(L10n.f("Claude token was rejected (%d). Run `claude` once to refresh your sign-in.", http.statusCode))
         case 429:
             throw ProviderError.rateLimited(retryAfter: HTTPClient.retryAfter(http))

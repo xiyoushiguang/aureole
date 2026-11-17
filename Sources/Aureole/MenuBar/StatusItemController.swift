@@ -59,7 +59,8 @@ final class StatusItemController: NSObject {
     private func update() {
         let parts = ProviderID.allCases.compactMap { id -> String? in
             guard settings.isEnabled(id) else { return nil }
-            if let s = store.snapshots[id]?.primary { return "\(Int(s.usedPercent.rounded()))" }
+            // A number that could not be refreshed for a while carries a question mark: old, not current.
+            if let s = store.snapshots[id]?.primary { return "\(Int(s.usedPercent.rounded()))" + (store.stale.contains(id) ? "?" : "") }
             if let st = store.status[id], st.message != nil { return "!" }
             return "–"
         }

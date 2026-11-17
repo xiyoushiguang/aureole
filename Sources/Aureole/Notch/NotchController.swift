@@ -47,6 +47,8 @@ final class NotchController {
     var followsPointer = false
     /// Put away with the hot key: nothing is drawn and hovering opens nothing until it is shown again.
     private(set) var hidden = false
+    /// Called each time the panel opens.
+    var onOpen: (() -> Void)?
 
     func toggleHidden() {
         hidden.toggle()
@@ -167,7 +169,7 @@ final class NotchController {
         guard model.isOpen != open else { return }
         model.isOpen = open
         panel.ignoresMouseEvents = !open
-        if !open { model.pinned = false }
+        if open { onOpen?() } else { model.pinned = false }
     }
 
     func setPinnedOpen(_ open: Bool) {

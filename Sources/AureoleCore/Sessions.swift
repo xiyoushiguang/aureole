@@ -290,6 +290,10 @@ public struct SessionBoard: Equatable, Sendable {
     public init() {}
 
     public var isEmpty: Bool { waiting.isEmpty && done.isEmpty && working.isEmpty && idle.isEmpty && background.isEmpty }
+    /// An agent is inside a turn somewhere (unattended runs included), so quotas can move any minute.
+    public var isBusy: Bool {
+        !working.isEmpty || !waiting.isEmpty || background.contains { $0.state == .working || $0.state.needsYou }
+    }
     public var all: [AgentSession] { waiting + done + working + idle + background }
 
     /// A turn this long or longer counts as a task worth telling you about when it ends.
