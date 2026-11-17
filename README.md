@@ -36,7 +36,8 @@ sun.
 - **Weekly forecast** from the week's average pace: "Claude weekly 40% · runs out Thu 15:00".
 - **A plain layout too.** Settings → Panel layout → List swaps the picture for pace bars and a task
   list in a narrower panel.
-- **Polite polling.** Once a minute while your numbers move, slowing to every five minutes when they don't; obeys `Retry-After` when a vendor asks for a pause, and shows the last known numbers meanwhile.
+- **Polite polling.** Once a minute while your numbers move, slowing to every five minutes when they don't, to fifteen when no agent is working, and to thirty when the screen is locked as well. It asks again at once when you unlock, open the panel, an agent starts, or a reset time passes. Obeys `Retry-After` when a vendor asks for a pause, and shows the last known numbers meanwhile.
+- **Old numbers look old.** A provider that cannot be read for ten minutes turns grey under the notch and gets a question mark in the menu bar; a window whose reset has passed shows empty. A token that simply expired (Claude Code and Codex renew theirs only when they run) is waited for quietly, not reported as a lost sign-in.
 - **Reset times** as both a countdown and a clock time: `4h 37m · 00:00`.
 - **Burn rate and forecast.** After a few minutes of samples: `≈12%/h · empty 14:12, before reset`.
 - **Who used it.** The area under the usage curve is split into one coloured band per session, sized by
@@ -217,7 +218,9 @@ helper and leaves when it exits (or pass `--pid`).
 - Once a day Aureole asks GitHub's public API for the latest release (switch it off in Settings → General).
 - Notification channel settings (webhook URLs, bot tokens) are stored in
   `~/Library/Application Support/Aureole/channels.json` with `0600` permissions.
-- Usage samples for the burn-rate forecast live in `history.json` next to it, seven days deep.
+- Usage samples for the burn-rate forecast live in `history.json` next to it, seven days deep (every reading for
+  six hours, then one per ten minutes). It and the ledger are saved every five minutes and on quit.
+- The log, `~/Library/Logs/Aureole/aureole.log`, is moved aside at 1 MB (`aureole.log.1`).
 - Token counts per session, model and minute live in `ledger.json` (eight days), with how far each
   transcript has been read. Titles and folders come along; prompts and replies are never stored.
 - `defaults write app.aureole.Aureole debugDump -bool true` saves the raw usage payloads to
