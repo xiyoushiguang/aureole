@@ -171,9 +171,9 @@ final class UsageStore: ObservableObject {
                 .sink { [weak self] _ in MainActor.assumeIsolated { if let self { action(self) } } }
                 .store(in: &cancellables)
         }
-        on(distributed, Notification.Name("com.apple.screenIsUnlocked")) { $0.nudge() }
+        on(distributed, Notification.Name("com.apple.screenIsUnlocked")) { $0.nudge("unlocked") }
         on(workspace, NSWorkspace.screensDidSleepNotification) { $0.dark = true }
-        on(workspace, NSWorkspace.screensDidWakeNotification) { $0.dark = false; $0.nudge() }
+        on(workspace, NSWorkspace.screensDidWakeNotification) { $0.dark = false; $0.nudge("display on") }
     }
 
     private func retryFailed(reason: String) {
@@ -191,10 +191,11 @@ final class UsageStore: ObservableObject {
     /// Someone is back or about to look (an unlock, the panel opening), or an agent has started work: read
     /// again now wherever the numbers are older than a refresh interval. At most once a minute per provider,
     /// and never into a rate limit.
-    func nudge() {
+    func nudge(_ reason: String) {
         guard !demo else { return }
         let now = Date()
         let fresh = max(60, settings.refreshInterval)
+        var asked: [String] = []
         for id in ProviderID.allCases where settings.isEnabled(id) && !inFlight.contains(id) {
             if case .rateLimited(let until)? = status[id], until > now { continue }
             if let r = readings[id], now.timeIntervalSince(r.fetchedAt) < fresh { continue }
@@ -203,7 +204,9 @@ final class UsageStore: ObservableObject {
             lastNudge[id] = now
             backoff[id] = nil
             nextDue[id] = now.addingTimeInterval(1)
+            asked.append(id.displayName)
         }
+        if !asked.isEmpty { AureoleLog.shared.log("\(reason): reading \(asked.joined(separator: ", ")) now") }
     }
 
     private func settingsChanged() {

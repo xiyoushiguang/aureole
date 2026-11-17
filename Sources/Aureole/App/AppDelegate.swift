@@ -53,10 +53,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
         // With an agent at work the quotas are read every few minutes; with none, and nobody at the screen, rarely.
         store.agentsBusy = { [weak self] in self?.sessions.board.isBusy ?? false }
         sessions.$board.map(\.isBusy).removeDuplicates().dropFirst().filter { $0 }.sink { [weak self] _ in
-            DispatchQueue.main.async { self?.store.nudge() }
+            DispatchQueue.main.async { self?.store.nudge("agent at work") }
         }.store(in: &cancellables)
         // Opening the panel is looking at the numbers: make sure they are current.
-        controller.onOpen = { [weak self] in self?.store.nudge() }
+        controller.onOpen = { [weak self] in self?.store.nudge("panel opened") }
         store.start()
         sessions.start()
         ledger.start()
