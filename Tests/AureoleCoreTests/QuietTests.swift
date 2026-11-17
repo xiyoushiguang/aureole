@@ -117,6 +117,34 @@ final class QuietTests: XCTestCase {
         XCTAssertNil(try CodexCredentialReader.parse(Data(#"{"tokens":{"access_token":"\#(jwt("{}"))"}}"#.utf8)).expiresAt)
     }
 
+    func testExpiredCodexTokenIsNotSentAndReadsAsWaiting() async throws {
+        // A sign-in file whose token ran out an hour ago. Nothing is asked of the network: the call ends
+        // before any request, with "expired" rather than "signed out".
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("aureole-codex-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let claims = #"{"exp":\#(Int(Date().timeIntervalSince1970) - 3600)}"#
+        let b64 = Data(claims.utf8).base64EncodedString().replacingOccurrences(of: "=", with: "")
+        try Data(#"{"tokens":{"access_token":"h.\#(b64).s","account_id":"a"}}"#.utf8).write(to: home.appendingPathComponent("auth.json"))
+        let provider = CodexProvider(codexHome: home)
+        XCTAssertTrue(provider.skipWhenExpired)
+        do {
+            _ = try await provider.fetch()
+            XCTFail("an expired token should not produce a reading")
+        } catch let e as ProviderError {
+            guard case .expired(let note) = e else { return XCTFail("expected expired, got \(e)") }
+            XCTAssertTrue(note.contains("Codex"))
+            XCTAssertTrue(note.contains("renews by itself"))
+        }
+        // No sign-in file at all is a different thing: signed out.
+        do {
+            _ = try await CodexProvider(codexHome: home.appendingPathComponent("nowhere")).fetch()
+            XCTFail("no sign-in should not produce a reading")
+        } catch let e as ProviderError {
+            guard case .signedOut = e else { return XCTFail("expected signed out, got \(e)") }
+        }
+    }
+
     // MARK: - History
 
     func testOldSamplesAreThinnedToOnePerTenMinutesPerWindow() {
