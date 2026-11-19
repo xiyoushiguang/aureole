@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.4 — 2026-11-18
 
 - **No more "sign-in needed" for a token that simply ran out.** Claude Code and Codex renew their tokens
   only when they run, so a stored token expires every few hours and the next one appears by itself.
