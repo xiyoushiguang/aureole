@@ -687,10 +687,12 @@ struct HorizonCanvas: View {
             ctx.fill(Path(ellipseIn: dot), with: .color(HorizonColor.claudeBright))
             ctx.stroke(Path(ellipseIn: dot), with: .color(.white), lineWidth: 1.5)
             // Above-left of the point, unless that would sit on the "Now" pill (high usage): then below-right,
-            // in the empty sky under the forecast rather than on top of the bands.
+            // in the empty sky under the forecast rather than on top of the bands. From about 78% the point is
+            // level with the pill or above it, and below-right of the point is the pill itself: the words go
+            // under the pill then.
             let clash = cur.y - 6 - 14 < box.maxY + 2 && cur.x - 10 > box.minX - 60
             label(&ctx, L10n.f("Used %d%%", Int(w.usedPercent.rounded())),
-                  at: clash ? CGPoint(x: cur.x + 10, y: cur.y + 8) : CGPoint(x: cur.x - 10, y: cur.y - 6),
+                  at: clash ? CGPoint(x: max(cur.x + 10, nowX + 8), y: max(cur.y + 8, box.maxY + 4)) : CGPoint(x: cur.x - 10, y: cur.y - 6),
                   anchor: clash ? .topLeading : .bottomTrailing, size: 10.5, weight: .semibold, color: HorizonColor.claudeBright)
         }
     }
