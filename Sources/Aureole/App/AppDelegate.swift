@@ -35,6 +35,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
             Snapshotter.run(to: dir, language: language)
             return
         }
+        if case .film(let dir, let scene, let language) = launch {
+            Filmer.run(to: dir, scene: scene, language: language)
+            return
+        }
         AureoleLog.shared.log("Aureole \(AureoleInfo.version) launched" + (launch.isDemo ? " (demo)" : ""))
         installMainMenu()
         if launch.isDemo { loadDemo() }
