@@ -637,12 +637,22 @@ struct HorizonCanvas: View {
             if let p = spot { label(&ctx, L10n.t("Steady pace"), at: CGPoint(x: p.x, y: p.y + 8), anchor: .top) }
         }
 
+        // The "Now" pill, drawn last. It keeps clear above the current point as usage climbs towards it, so the
+        // point never sits on the pill's words.
+        let pill = ctx.resolve(Text(L10n.f("Now %@", Formatting.clock(scene.clock.now)))
+            .font(.system(size: 10, weight: .semibold).monospacedDigit()).foregroundColor(.black))
+        let ts = pill.measure(in: CGSize(width: 200, height: 40))
+        let box = CGRect(x: nowX - ts.width / 2 - 7, y: min(116, (scene.current?.y ?? .infinity) - 26), width: ts.width + 14, height: 16)
+
         // Forecast.
         // The dashed line itself flows on a Core Animation layer (`FlowingDashes`); the end point and words stay here.
         if let (_, to) = scene.forecast {
             if let at = scene.exhaustAt, scene.dryFrom != nil {
                 ctx.fill(Path(ellipseIn: CGRect(x: to.x - 5, y: to.y - 5, width: 10, height: 10)), with: .color(Theme.amber))
-                label(&ctx, Formatting.clock(at), at: CGPoint(x: to.x, y: to.y - 9), anchor: .bottom, size: 11.5, weight: .bold, color: Theme.amber)
+                // Minutes from running out, the end point is right beside "now": its time goes above the pill.
+                let beside = abs(to.x - nowX) < box.width / 2 + 24
+                label(&ctx, Formatting.clock(at), at: CGPoint(x: to.x, y: beside ? min(to.y - 9, box.minY - 3) : to.y - 9),
+                      anchor: .bottom, size: 11.5, weight: .bold, color: Theme.amber)
                 if let a = scene.dryFrom, let b = scene.dryTo, let reset = scene.window?.resetsAt {
                     label(&ctx, L10n.f("No quota here, about %@", Formatting.countdown(reset.timeIntervalSince(at))),
                           at: L.point((a + b) / 2, (H + top) / 2 + 8), size: 10.5, color: .white.opacity(0.78))
@@ -674,10 +684,6 @@ struct HorizonCanvas: View {
         }
 
         // "Now": straight down from its label, through the sun, on into the lanes.
-        let pill = ctx.resolve(Text(L10n.f("Now %@", Formatting.clock(scene.clock.now)))
-            .font(.system(size: 10, weight: .semibold).monospacedDigit()).foregroundColor(.black))
-        let ts = pill.measure(in: CGSize(width: 200, height: 40))
-        let box = CGRect(x: nowX - ts.width / 2 - 7, y: 116, width: ts.width + 14, height: 16)
         ctx.stroke(line([CGPoint(x: nowX, y: box.maxY), CGPoint(x: nowX, y: L.height)]), with: .color(HorizonColor.nowLine), lineWidth: 1.5)
         ctx.fill(Path(roundedRect: box, cornerRadius: 8), with: .color(.white))
         ctx.draw(pill, at: CGPoint(x: box.midX, y: box.midY))
@@ -687,9 +693,7 @@ struct HorizonCanvas: View {
             ctx.fill(Path(ellipseIn: dot), with: .color(HorizonColor.claudeBright))
             ctx.stroke(Path(ellipseIn: dot), with: .color(.white), lineWidth: 1.5)
             // Above-left of the point, unless that would sit on the "Now" pill (high usage): then below-right,
-            // in the empty sky under the forecast rather than on top of the bands. From about 78% the point is
-            // level with the pill or above it, and below-right of the point is the pill itself: the words go
-            // under the pill then.
+            // in the empty sky under the forecast rather than on top of the bands, and never on the pill.
             let clash = cur.y - 6 - 14 < box.maxY + 2 && cur.x - 10 > box.minX - 60
             label(&ctx, L10n.f("Used %d%%", Int(w.usedPercent.rounded())),
                   at: clash ? CGPoint(x: max(cur.x + 10, nowX + 8), y: max(cur.y + 8, box.maxY + 4)) : CGPoint(x: cur.x - 10, y: cur.y - 6),
