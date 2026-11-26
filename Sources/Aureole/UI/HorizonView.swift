@@ -61,6 +61,94 @@ enum HorizonColor {
     }
 }
 
+/// The sky says how the quota on the horizon is doing before any number is read: deep blue while there is
+/// plenty, dusk when it will run short, embers when it is nearly gone, grey when the numbers are old.
+enum SkyMood: Equatable {
+    case calm, dusk, ember, stale
+
+    /// `AUREOLE_SKY=flat` paints the plain night instead, to compare the two.
+    static let enabled = ProcessInfo.processInfo.environment["AUREOLE_SKY"] != "flat"
+
+    init(window: UsageWindow?, stale: Bool, runsDry: Bool) {
+        guard let w = window, !stale else { self = .stale; return }
+        if w.usedPercent >= 95 { self = .ember }
+        else if w.usedPercent >= 80 || runsDry { self = .dusk }
+        else { self = .calm }
+    }
+
+    /// The sky just above the horizon; it fades up into the panel's black.
+    var low: Color {
+        switch self {
+        case .calm: return Color(hex: 0x0B2150)
+        case .dusk: return Color(hex: 0x33173A)
+        case .ember: return Color(hex: 0x46100F)
+        case .stale: return Color(hex: 0x16181D)
+        }
+    }
+
+    /// Light spreading from the sun.
+    var bloom: Color {
+        switch self {
+        case .calm: return Color(hex: 0xFFD9A8)
+        case .dusk: return Color(hex: 0xFFAE5C)
+        case .ember: return Color(hex: 0xFF6A48)
+        case .stale: return Color(hex: 0x8F96A3)
+        }
+    }
+
+    /// Air on the planet's edge.
+    var limb: Color {
+        switch self {
+        case .calm: return Color(hex: 0x6FA8FF)
+        case .dusk: return Color(hex: 0xFF9E6A)
+        case .ember: return Color(hex: 0xFF5C44)
+        case .stale: return Color(hex: 0x7C828E)
+        }
+    }
+
+    /// The planet's surface where the sun's light falls.
+    var day: Color {
+        switch self {
+        case .calm: return Color(hex: 0x16305F)
+        case .dusk: return Color(hex: 0x3B2038)
+        case .ember: return Color(hex: 0x451714)
+        case .stale: return Color(hex: 0x1B1D22)
+        }
+    }
+
+    var starlight: Double { self == .stale ? 0.45 : 1 }
+}
+
+/// The planet under the lanes: night, with the sun's light pooling under "now".
+struct GroundBackdrop: View {
+    let scene: HorizonScene
+    /// Panel points per canvas unit.
+    let scale: CGFloat
+    let mood: SkyMood?
+
+    var body: some View {
+        Canvas { ctx, size in
+            let all = Path(CGRect(origin: .zero, size: size))
+            ctx.fill(all, with: .color(HorizonColor.ground))
+            guard let mood else { return }
+            // The same light the arc's canvas paints on the planet, from the same sun: this view begins one
+            // point above that canvas's bottom edge.
+            ctx.translateBy(x: 0, y: 1 - scene.layout.height * scale)
+            ctx.scaleBy(x: scale, y: scale)
+            ctx.fill(Path(CGRect(x: 0, y: 0, width: scene.layout.width, height: scene.layout.height + size.height / scale)),
+                     with: Self.light(mood, from: scene.sun))
+        }
+    }
+
+    /// In the arc canvas's units.
+    static func light(_ mood: SkyMood, from sun: CGPoint) -> GraphicsContext.Shading {
+        .radialGradient(Gradient(stops: [
+            .init(color: mood.day.opacity(0.95), location: 0),
+            .init(color: mood.day.opacity(0.50), location: 0.4),
+            .init(color: mood.day.opacity(0), location: 1)]), center: sun, startRadius: 0, endRadius: 420)
+    }
+}
+
 extension Color {
     init(hex: UInt32) {
         self.init(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255)
@@ -106,10 +194,12 @@ struct HorizonPanel: View {
         let scene = HorizonScene(layout: .band, now: now, window: inputs.window, samples: inputs.samples,
                                  prediction: inputs.prediction, sessions: board, weights: weights)
         let s = width / scene.layout.width
+        let mood = SkyMood.enabled
+            ? SkyMood(window: inputs.window, stale: store.stale.contains(inputs.main), runsDry: scene.dryFrom != nil) : nil
         VStack(spacing: 0) {
             ZStack(alignment: .topLeading) {
                 HorizonArc(inputs: inputs, now: now, board: board, weights: weights, used: inputs.window?.usedPercent ?? 0,
-                           ambient: settings.ambientMotion && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+                           ambient: settings.ambientMotion && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, mood: mood)
                     .animation(.easeInOut(duration: 0.9), value: inputs.window?.usedPercent)
                 HStack(alignment: .top, spacing: 16) {
                     // The waiting capsule sits under the conclusion, in the sky left of "now", which is otherwise empty.
@@ -138,7 +228,7 @@ struct HorizonPanel: View {
         }
         .background(alignment: .bottom) {
             // The planet's night side carries on under the lanes and the footer.
-            HorizonColor.ground.padding(.top, scene.layout.height * s - 1)
+            GroundBackdrop(scene: scene, scale: s, mood: mood).padding(.top, scene.layout.height * s - 1)
         }
         .overlay(alignment: .topTrailing) {
             if let id = focus, let lane = scene.lanes.first(where: { $0.id == id }) {
@@ -291,6 +381,8 @@ struct HorizonArc: View, Animatable {
     var used: Double
     /// Breathing glow and flowing forecast on; off for Reduce Motion or by choice.
     var ambient = true
+    /// What the sky and the planet say about the quota; nil paints the plain night.
+    var mood: SkyMood?
 
     var animatableData: Double {
         get { used }
@@ -301,7 +393,7 @@ struct HorizonArc: View, Animatable {
         let scene = HorizonScene(layout: .band, now: now, window: window(used), samples: inputs.samples,
                                  prediction: inputs.prediction, sessions: board, weights: weights)
         ZStack {
-            HorizonCanvas(scene: scene, layer: .sky)
+            HorizonCanvas(scene: scene, layer: .sky, mood: mood)
             // The lit stretch breathes slowly: usage is being spent. The blurred glow is rendered once into a
             // bitmap and only that bitmap's opacity animates; animating the Canvas itself redrew the blur every
             // frame (a quarter of a CPU core while the panel was open).
@@ -316,7 +408,7 @@ struct HorizonArc: View, Animatable {
                     .position(x: box.midX * k, y: box.midY * k)
                 }
             }
-            HorizonCanvas(scene: scene, layer: .main)
+            HorizonCanvas(scene: scene, layer: .main, mood: mood)
             if !ambient, let (from, to) = scene.forecast {
                 // Still: the same dashes, not moving.
                 GeometryReader { geo in
@@ -376,6 +468,7 @@ struct HorizonCanvas: View {
     enum Layer { case sky, glow, main }
     let scene: HorizonScene
     var layer: Layer = .main
+    var mood: SkyMood?
 
     var body: some View {
         Canvas { ctx, size in
@@ -390,11 +483,67 @@ struct HorizonCanvas: View {
     }
 
     private func drawSky(_ ctx: inout GraphicsContext, _ L: HorizonLayout) {
-        // Fades in from the panel's top so it sits on either background without a seam.
-        ctx.fill(Path(CGRect(x: 0, y: 0, width: L.width, height: L.height)),
-                 with: .linearGradient(Gradient(colors: [Color(hex: 0x05060C).opacity(0), Color(hex: 0x0B1428).opacity(0.9)]),
-                                       startPoint: .zero, endPoint: CGPoint(x: 0, y: L.height)))
+        let all = Path(CGRect(x: 0, y: 0, width: L.width, height: L.height))
+        let bottom = CGPoint(x: 0, y: L.height)
+        guard let mood else {
+            // Fades in from the panel's top so it sits on either background without a seam.
+            ctx.fill(all, with: .linearGradient(Gradient(colors: [Color(hex: 0x05060C).opacity(0), Color(hex: 0x0B1428).opacity(0.9)]),
+                                                startPoint: .zero, endPoint: bottom))
+            return
+        }
+        let sun = scene.sun
+        let H = L.horizon, c = L.center
+        // Gradients only, no blur: this layer is redrawn on every frame of a sliding number.
+        ctx.drawLayer { sky in
+            // The colour of the hour.
+            sky.fill(all, with: .linearGradient(Gradient(stops: [
+                .init(color: mood.low.opacity(0.10), location: 0),
+                .init(color: mood.low.opacity(0.55), location: 0.5),
+                .init(color: mood.low, location: 1)]), startPoint: .zero, endPoint: bottom))
+            // Light spreading from the sun on the horizon.
+            sky.fill(all, with: .radialGradient(Gradient(stops: [
+                .init(color: mood.bloom.opacity(0.30), location: 0),
+                .init(color: mood.bloom.opacity(0.11), location: 0.34),
+                .init(color: mood.bloom.opacity(0), location: 1)]), center: sun, startRadius: 0, endRadius: 470))
+            // Stars come out away from the sun, more of them ahead (the night still to come) than behind.
+            for star in Self.stars {
+                let x = star.x * L.width
+                let dx = x - c.x
+                let surface = c.y - (H * H - dx * dx).squareRoot()
+                let y = 34 + star.y * max(0, surface - 46)
+                let far = min(1, max(0, (hypot(x - sun.x, y - sun.y) - 120) / 380))
+                let a = star.a * far * (x < sun.x ? 0.45 : 1) * mood.starlight
+                guard a > 0.03 else { continue }
+                sky.fill(Path(ellipseIn: CGRect(x: x - star.r, y: y - star.r, width: 2 * star.r, height: 2 * star.r)),
+                         with: .color(.white.opacity(a)))
+            }
+            // The aureole: air on the planet's edge, bright by the sun and thinning into the night.
+            sky.drawLayer { air in
+                air.fill(all, with: .radialGradient(Gradient(stops: [
+                    .init(color: mood.limb.opacity(0.62), location: 0),
+                    .init(color: mood.limb.opacity(0.20), location: 0.28),
+                    .init(color: mood.limb.opacity(0), location: 1)]), center: c, startRadius: H, endRadius: H + 58))
+                air.blendMode = .destinationIn
+                air.fill(all, with: .radialGradient(Gradient(colors: [.black, .black.opacity(0.30)]), center: sun, startRadius: 80, endRadius: 640))
+            }
+            // Black at the top, where the panel grows out of the hardware notch.
+            sky.blendMode = .destinationIn
+            sky.fill(all, with: .linearGradient(Gradient(stops: [
+                .init(color: .black.opacity(0), location: 0),
+                .init(color: .black.opacity(0.5), location: 0.3),
+                .init(color: .black, location: 0.62)]), startPoint: .zero, endPoint: bottom))
+        }
     }
+
+    /// Where the stars are, as fractions of the sky; the same sky every time.
+    private static let stars: [(x: Double, y: Double, r: Double, a: Double)] = {
+        var seed: UInt64 = 0x9E37_79B9_7F4A_7C15
+        func next() -> Double {
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return Double((seed >> 33) & 0xFF_FFFF) / Double(0xFF_FFFF)
+        }
+        return (0..<110).map { _ in (x: next(), y: next(), r: 0.4 + next() * next() * 0.9, a: 0.25 + next() * 0.6) }
+    }()
 
     /// The lit stretch of horizon and the sun, blurred; sits under the planet.
     private func drawGlow(_ ctx: inout GraphicsContext, _ L: HorizonLayout) {
@@ -448,9 +597,11 @@ struct HorizonCanvas: View {
 
         // The planet; its night side continues under the panel as the lanes' ground.
         let c = L.center
-        ctx.fill(Path(ellipseIn: CGRect(x: c.x - H, y: c.y - H, width: 2 * H, height: 2 * H)),
-                 with: .linearGradient(Gradient(colors: [Color(hex: 0x080B18), HorizonColor.ground]),
-                                       startPoint: CGPoint(x: 0, y: L.point(0, H).y), endPoint: CGPoint(x: 0, y: L.height)))
+        let planet = Path(ellipseIn: CGRect(x: c.x - H, y: c.y - H, width: 2 * H, height: 2 * H))
+        ctx.fill(planet, with: .linearGradient(Gradient(colors: [Color(hex: 0x080B18), HorizonColor.ground]),
+                                               startPoint: CGPoint(x: 0, y: L.point(0, H).y), endPoint: CGPoint(x: 0, y: L.height)))
+        // Its surface catches the sun's light where the sun stands; `GroundBackdrop` carries it on under the lanes.
+        if let mood { ctx.fill(planet, with: GroundBackdrop.light(mood, from: sun)) }
 
         // Usage so far, filled down to the horizon: one band per session when the ledger can tell who used it.
         if scene.curve.count >= 2, let first = scene.curve.first {
