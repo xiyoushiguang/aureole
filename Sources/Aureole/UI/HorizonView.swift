@@ -164,6 +164,9 @@ struct SkyFilm: Equatable {
     var newStar: Double = 0
     /// The moment the panel shows, held still for the length of the film.
     var now: Date?
+    /// 0 holds the slow breathing still (the planet's edge, the sun's light, the lit stretch) and leaves the rest
+    /// moving. A GIF stores every pixel that changes: breathing changes most of the sky on every frame.
+    var breath: Double = 1
 }
 
 private struct SkyFilmKey: EnvironmentKey { static let defaultValue: SkyFilm? = nil }
@@ -492,7 +495,7 @@ struct HorizonArc: View, Animatable {
                         if ambient { BreathingImage(image: image) } else { Image(nsImage: image).resizable() }
                     }
                     // In a film, the same breath `BreathingImage` takes: 0.55 to 1 and back in 4.4 seconds.
-                    .opacity(film.map { 0.775 - 0.225 * cos(2 * .pi * $0.t / 4.4) } ?? 1)
+                    .opacity(film.map { 1 - $0.breath * (0.225 + 0.225 * cos(2 * .pi * $0.t / 4.4)) } ?? 1)
                     .frame(width: box.width * k, height: box.height * k)
                     .position(x: box.midX * k, y: box.midY * k)
                 }
@@ -687,8 +690,9 @@ struct HorizonCanvas: View {
         let t = film?.t ?? 0
         let live = film?.live ?? 0
         func wave(_ period: Double, _ phase: Double = 0) -> Double { 0.5 + 0.5 * sin(2 * .pi * (t / period + phase)) }
-        let edgeBreath = 1 - Self.edgeSwing * (film == nil ? motion : live * wave(7))
-        let bloomBreath = 1 - Self.bloomSwing * (film == nil ? motion : live * wave(7, 0.12))
+        let breath = film?.breath ?? 1
+        let edgeBreath = 1 - Self.edgeSwing * (film == nil ? motion : live * breath * wave(7))
+        let bloomBreath = 1 - Self.bloomSwing * (film == nil ? motion : live * breath * wave(7, 0.12))
         // Gradients only, no blur: this layer is redrawn on every frame of a sliding number.
         ctx.drawLayer { layer in
             // The colour of the hour.
@@ -1284,7 +1288,7 @@ struct SessionCard: View {
                 }
                 Spacer(minLength: 4)
                 TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                    Text(L10n.f("Terminal asks in %d s", max(0, Int(r.expires.timeIntervalSince(ctx.date).rounded()))))
+                    Text(L10n.f("Terminal asks in %d s", max(0, Int(r.expires.timeIntervalSince(PanelClock.film ?? ctx.date).rounded()))))
                         .font(.system(size: 10.5).monospacedDigit()).foregroundStyle(HorizonColor.label)
                 }
             }
@@ -1345,7 +1349,7 @@ struct SessionCard: View {
                 .disabled(!complete)
                 Spacer(minLength: 4)
                 TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                    Text(L10n.f("Terminal asks in %d s", max(0, Int(r.expires.timeIntervalSince(ctx.date).rounded()))))
+                    Text(L10n.f("Terminal asks in %d s", max(0, Int(r.expires.timeIntervalSince(PanelClock.film ?? ctx.date).rounded()))))
                         .font(.system(size: 10.5).monospacedDigit()).foregroundStyle(HorizonColor.label)
                 }
             }

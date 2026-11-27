@@ -9,9 +9,7 @@ you have left, and what each of your Claude Code sessions is doing, right where 
 are. Closed, two arcs of light hug the notch, one per provider, shrinking as the current window
 drains. Hover, and the panel drops down:
 
-![Aureole's panel: the quota on the horizon, under a sky that takes its colour, and one lane per session (sample data)](docs/screenshots/horizon.png)
-
-![The closed notch, the panel, and a permission request answered from the panel (sample data; recorded before 0.8, when the sky was still plain)](docs/demo.gif)
+![Aureole: the closed notch, the panel under its sky, a permission request answered from the panel, and a task finishing (sample data)](docs/demo.gif)
 
 **How to read it.** Time runs left to right along the edge of a planet, with **now** at the white
 sun.
@@ -243,6 +241,7 @@ scripts/run.sh         # debug build, relaunch
 scripts/dev-cmd.sh open|close|refresh   # drive the running app for screenshots
 scripts/demo.sh        # open the app with sample data (no agent or sign-in needed)
 scripts/snapshot.sh    # render the panel with sample data to build/snapshots/*.png
+scripts/readme-gif.sh  # draw the animation at the top of this page again (docs/demo.gif), from the sample data
 ```
 
 Layout:

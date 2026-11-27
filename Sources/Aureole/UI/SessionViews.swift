@@ -124,7 +124,7 @@ struct SessionMeta: View {
 
     var body: some View {
         let s = session
-        let now = Date()
+        let now = PanelClock.now
         let quiet = SessionHealth.silence(s, now: now)
         let full = (context ?? 0) >= SessionHealth.contextNearlyFull
         let base = (s.provider == .claude ? [] : [s.provider.displayName]) + [Formatting.countdown(now.timeIntervalSince(s.startedAt))]
@@ -171,7 +171,7 @@ struct SessionBadge: View {
             case .working:
                 Text(L10n.t("working")).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Theme.accent(s.provider))
             case .idle, .ended:
-                Text(L10n.t("idle") + " " + Formatting.countdown(Date().timeIntervalSince(s.stateSince)))
+                Text(L10n.t("idle") + " " + Formatting.countdown(PanelClock.now.timeIntervalSince(s.stateSince)))
                     .font(.system(size: 10.5)).foregroundStyle(Theme.dim)
             }
         }
@@ -196,12 +196,12 @@ enum SessionText {
     }
 
     /// "approval · waited 4m"
-    static func waitStatus(_ s: AgentSession, now: Date = Date()) -> String {
+    static func waitStatus(_ s: AgentSession, now: Date = PanelClock.now) -> String {
         let kind = s.state == .waitingInput ? L10n.t("question") : L10n.t("approval")
         return kind + " · " + L10n.f("waited %@", Formatting.countdown(now.timeIntervalSince(s.stateSince)))
     }
 
-    static func status(_ s: AgentSession, now: Date = Date()) -> String {
+    static func status(_ s: AgentSession, now: Date = PanelClock.now) -> String {
         switch s.state {
         case .waitingPermission, .waitingInput: return waitStatus(s, now: now)
         case .working:
@@ -214,7 +214,7 @@ enum SessionText {
 
 
     /// "4m ago"
-    static func ago(_ date: Date, now: Date = Date()) -> String {
+    static func ago(_ date: Date, now: Date = PanelClock.now) -> String {
         let s = now.timeIntervalSince(date)
         return s < 60 ? L10n.t("just now") : L10n.f("%@ ago", Formatting.countdown(s))
     }
@@ -223,4 +223,12 @@ enum SessionText {
     static func short(_ n: String) -> String {
         n.count > 16 ? String(n.prefix(15)) + "…" : n
     }
+}
+
+/// The time the panel's words are counted from. The real time, except while a film is drawn frame by frame:
+/// drawing a film takes longer than the film runs, and "3 min ago" must not turn into "5 min ago", or a
+/// forty-second countdown run out, in the middle of twelve seconds.
+enum PanelClock {
+    nonisolated(unsafe) static var film: Date?
+    static var now: Date { film ?? Date() }
 }

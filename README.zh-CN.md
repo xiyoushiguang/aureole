@@ -8,9 +8,7 @@ Aureole 是一个原生 macOS 小工具：Claude 和 Codex 订阅还剩多少额
 都显示在你本来就会看的地方。收起时，刘海下沿是两道光弧，一家一道，额度用掉多少就缩短多少；
 鼠标移上去，面板展开：
 
-![Aureole 的面板：地平线上是额度，天空的颜色跟着额度走，下面每个会话一条横道（示例数据）](docs/screenshots/horizon-zh.png)
-
-![收起的刘海、展开的面板、在面板里批准一条权限请求（示例数据；录制于 0.8 之前，那时天空还是纯色）](docs/demo.zh.gif)
+![Aureole：收起的刘海、天色下的面板、在面板里批准一条权限请求、一个任务完成时划过流星（示例数据）](docs/demo.zh.gif)
 
 **怎么看。** 时间沿着一颗星球的地平线从左往右走，白色的太阳就是**现在**。
 
@@ -199,6 +197,7 @@ scripts/run.sh         # debug 构建并重启
 scripts/dev-cmd.sh open|close|refresh   # 遥控正在运行的 app，方便截图
 scripts/demo.sh        # 用示例数据打开 app（不用装 agent、不用登录）
 scripts/snapshot.sh    # 用示例数据把面板渲染成 build/snapshots/*.png
+scripts/readme-gif.sh  # 用示例数据重新生成本页顶部的动图（docs/demo.zh.gif）
 ```
 
 目录：

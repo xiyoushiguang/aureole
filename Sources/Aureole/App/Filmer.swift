@@ -19,6 +19,14 @@ enum Filmer {
         var notesDone = false
         /// Claude's numbers are old.
         var stale = false
+        /// The panel is down; false shows the closed notch.
+        var open = true
+        /// The card of the session that waits for a permission is up.
+        var card = false
+        /// That permission has been given from the card, and the session works on.
+        var approved = false
+        /// Seconds into the film, for the clock the panel's words are counted from.
+        var at = 0.0
     }
 
     private static func smooth(_ a: Double, _ b: Double, _ x: Double) -> Double {
@@ -52,6 +60,28 @@ enum Filmer {
         return f
     }
 
+    /// The README's animation, 12.6 seconds that loop: the closed notch; the panel; a session waits for a
+    /// permission and its card comes up; the permission is given and the session works on; another session
+    /// finishes its task, and a meteor falls.
+    static let readmeSeconds = 12.6
+    /// A GIF's frame rate: drawn at this rate to begin with, since the card's shadow takes seconds a frame.
+    static let readmeFps = 12.5
+    static func readme(_ t: Double) -> Frame {
+        var f = Frame()
+        f.at = t
+        f.open = t >= 1.4
+        f.card = t >= 5.2 && t < 8.6
+        f.approved = t >= 8.6
+        // Shifted so the light on the edge slides across while the panel is first looked at, not under the meteor.
+        f.film.t = t + 6.5
+        f.film.breath = 0
+        let falls = 10.0
+        f.notesDone = t >= falls
+        if t >= falls, t < falls + 0.9 { f.film.meteor = (t - falls) / 0.9 }
+        f.film.newStar = min(1, max(0, (t - falls - 0.75) / 0.6))
+        return f
+    }
+
     /// Six seconds at 62% used, for setting the plain sky (`AUREOLE_SKY=flat`) beside the new one.
     static func compare(_ t: Double) -> Frame {
         var f = Frame()
@@ -61,8 +91,12 @@ enum Filmer {
 
     static func run(to dir: URL, scene: String, language: Language) {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let seconds = scene == "compare" ? 6.0 : 24.0
-        let frames = (0..<Int(seconds * fps)).map { i in scene == "compare" ? compare(Double(i) / fps) : journey(Double(i) / fps) }
+        let seconds = scene == "compare" ? 6.0 : scene == "readme" ? readmeSeconds : 24.0
+        let rate = scene == "readme" ? readmeFps : fps
+        let frames = (0..<Int(seconds * rate)).map { i -> Frame in
+            let t = Double(i) / rate
+            return scene == "compare" ? compare(t) : scene == "readme" ? readme(t) : journey(t)
+        }
 
         let settings = SettingsStore(defaults: LaunchMode.demoDefaults())
         settings.language = language
@@ -79,34 +113,51 @@ enum Filmer {
         let size = CGSize(width: model.openWidth, height: model.maxOpenHeight)
 
         var store = UsageStore(settings: settings, demo: true)
-        var shown: (peak: Double, stale: Bool, notesDone: Bool)?
+        var shown: (peak: Double, stale: Bool, notesDone: Bool, open: Bool, card: Bool, approved: Bool)?
+        /// Whether going to `f` changes what is on the panel, not only how the sky stands: that takes a layout.
+        func rebuilds(_ f: Frame) -> Bool {
+            guard let s = shown else { return true }
+            return s.notesDone != f.notesDone || s.open != f.open || s.card != f.card || s.approved != f.approved
+        }
         func prepare(_ f: Frame) {
             if shown?.peak != f.peak || shown?.stale != f.stale {
                 store = UsageStore(settings: settings, demo: true)
                 store.loadDemo(DemoData.usage(now: now, peak: f.peak))
                 store.loadDemoTrouble(.claude, f.stale ? .expired(L10n.f("%@ token expired. It renews by itself the next time %@ runs.", "Claude", "Claude Code")) : nil)
             }
-            if shown?.notesDone != f.notesDone {
-                let d = DemoData.sessions(now: now, notesDone: f.notesDone)
+            if shown?.notesDone != f.notesDone || shown?.approved != f.approved {
+                let d = DemoData.sessions(now: now, notesDone: f.notesDone, billingApproved: f.approved)
                 sessions.loadDemo(d.list, titles: d.titles, context: d.context, approvals: d.approvals, now: now)
                 model.waitingCount = sessions.board.waiting.count
                 model.doneCount = sessions.board.done.count
             }
-            shown = (f.peak, f.stale, f.notesDone)
+            if shown?.card != f.card {
+                // The panel takes the lane whose card is up from the argument domain, as `-debugFocusLane` gives it.
+                UserDefaults.standard.setVolatileDomain(f.card ? ["debugFocusLane": DemoData.billing] : [:], forName: UserDefaults.argumentDomain)
+            }
+            model.isOpen = f.open
+            model.pinned = f.open
+            shown = (f.peak, f.stale, f.notesDone, f.open, f.card, f.approved)
         }
         func root(_ f: Frame) -> AnyView {
             var film = f.film
             film.now = now
+            // The panel's clock runs with the film, not with however long the drawing takes.
+            PanelClock.film = now.addingTimeInterval(f.at)
             return AnyView(NotchRootView(model: model, store: store, sessions: sessions, ledger: ledger, settings: settings, actions: nil)
                 .frame(width: size.width, height: size.height, alignment: .top)
                 .background(Color(white: 0.16))
                 .environment(\.skyFilm, film)
                 // Every frame is its final state: nothing eases in over the frames after it.
-                .transaction { $0.disablesAnimations = true })
+                .transaction { $0.disablesAnimations = true }
+                // A card going up or down is read when the panel is made, so make it anew.
+                .id(f.card))
         }
 
-        prepare(frames[0])
-        let host = NSHostingView(rootView: root(frames[0]))
+        // Laid out first with the panel down, whatever the film opens on: its height sets the crop for every frame.
+        let opening = frames.first { $0.open } ?? frames[0]
+        prepare(opening)
+        let host = NSHostingView(rootView: root(opening))
         host.frame = CGRect(origin: .zero, size: size)
         let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.contentView = host
@@ -114,13 +165,15 @@ enum Filmer {
         window.orderFrontRegardless()
 
         var crop = CGRect.zero
+        /// The open panel's height, measured before the first frame.
+        var openHeight: CGFloat = 0
         func capture(_ i: Int) {
             guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
             host.cacheDisplay(in: host.bounds, to: rep)
             let scale = CGFloat(rep.pixelsWide) / host.bounds.width
             if crop.isEmpty {
                 // The same crop for every frame, with even pixel sizes for the video.
-                let height = (min(size.height, model.openContentHeight + 24) * scale / 2).rounded(.down) * 2
+                let height = (min(size.height, (openHeight > 0 ? openHeight : model.openContentHeight) + 24) * scale / 2).rounded(.down) * 2
                 crop = CGRect(x: 0, y: 0, width: (size.width * scale / 2).rounded(.down) * 2, height: height)
             }
             guard let cg = rep.cgImage?.cropping(to: crop),
@@ -134,16 +187,20 @@ enum Filmer {
                 NSApp.terminate(nil)
                 return
             }
+            let settle = rebuilds(frames[i]) ? 0.45 : 0.015
             prepare(frames[i])
             host.rootView = root(frames[i])
-            // A turn of the run loop for SwiftUI to take the new values in.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.015) {
+            // A turn of the run loop for SwiftUI to take the new values in; longer when the panel itself changes.
+            DispatchQueue.main.asyncAfter(deadline: .now() + settle) {
                 host.layoutSubtreeIfNeeded()
                 capture(i)
                 step(i + 1)
             }
         }
         // Let SwiftUI lay out and measure the lanes before the first frame.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { step(0) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+            openHeight = model.openContentHeight
+            step(0)
+        }
     }
 }

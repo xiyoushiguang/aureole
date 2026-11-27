@@ -52,7 +52,8 @@ enum DemoData {
     }
 
     /// `notesDone`: the release-notes session has just finished its turn, instead of still working.
-    static func sessions(now: Date, notesDone: Bool = false) -> Sessions {
+    /// `billingApproved`: the request the billing session was waiting on has been answered, and it works on.
+    static func sessions(now: Date, notesDone: Bool = false, billingApproved: Bool = false) -> Sessions {
         func ago(_ minutes: Double) -> Date { now.addingTimeInterval(-minutes * 60) }
         func session(_ id: String, _ p: ProviderID, cwd: String, started: Double) -> AgentSession {
             var s = AgentSession(provider: p, sessionId: id, cwd: cwd, now: ago(started))
@@ -70,6 +71,11 @@ enum DemoData {
         billing.set(.waitingPermission, at: ago(1.7))
         billing.waitingMessage = "Bash: npm run test -- --watch=false"
         billing.updatedAt = ago(1.7)
+        if billingApproved {
+            billing.set(.working, at: ago(0.02))
+            billing.waitingMessage = nil
+            billing.updatedAt = ago(0.02)
+        }
 
         var notes = session(Self.notes, .claude, cwd: "~/work/shop-api", started: 40)
         notes.set(.working, at: ago(38)); notes.set(.idle, at: ago(30)); notes.set(.working, at: ago(18))
@@ -113,7 +119,8 @@ enum DemoData {
                                        full: "npm run test -- --watch=false", at: ago(1.7), expires: now.addingTimeInterval(42),
                                        alwaysRule: "Bash(npm run test:*)")
         return Sessions(list: [billing, notes, login, ci, docs, nightly], titles: titles,
-                        context: [Self.billing: 412_000, Self.notes: 48_000, Self.login: 131_000], approvals: [approval])
+                        context: [Self.billing: 412_000, Self.notes: 48_000, Self.login: 131_000],
+                        approvals: billingApproved ? [] : [approval])
     }
 
     /// Token use that matches the story above: the waiting session did most of the recent work.
