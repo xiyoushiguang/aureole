@@ -108,8 +108,11 @@ public struct RoutingHint: Equatable, Sendable {
     public static func evaluate(_ snapshots: [ProviderID: ProviderSnapshot],
                                 drainedAt: Double = 80, headroomBelow: Double = 40) -> RoutingHint? {
         let pairs = ProviderID.allCases.compactMap { id -> (ProviderID, Double)? in
-            guard let s = snapshots[id]?.primary else { return nil }
-            return (id, s.usedPercent)
+            guard let snap = snapshots[id], snap.primary != nil else { return nil }
+            // The tighter of the five-hour and the weekly window decides: five hours barely touched is no
+            // headroom in a week that is spent. (A single model's own weekly limit is not counted.)
+            let used = snap.windows.filter { !$0.isSpend && $0.kind != .other }.map(\.usedPercent).max()
+            return used.map { (id, $0) }
         }
         guard pairs.count >= 2 else { return nil }
         guard let worst = pairs.max(by: { $0.1 < $1.1 }), let best = pairs.min(by: { $0.1 < $1.1 }) else { return nil }

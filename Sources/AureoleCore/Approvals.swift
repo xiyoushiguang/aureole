@@ -62,7 +62,8 @@ public struct ApprovalRequest: Codable, Equatable, Identifiable, Sendable {
                     parts.append((r["ruleContent"] as? String).map { "\(tool)(\($0))" } ?? tool)
                 }
             case "addDirectories":
-                for d in s["directories"] as? [String] ?? [] { parts.append(L10n.f("folder %@", (d as NSString).lastPathComponent)) }
+                // The whole path, home as ~: two folders with the same name in different places are different grants.
+                for d in s["directories"] as? [String] ?? [] { parts.append(L10n.f("folder %@", (d as NSString).abbreviatingWithTildeInPath)) }
             case "setMode":
                 switch s["mode"] as? String {
                 case "acceptEdits"?: parts.append(L10n.t("accept edits"))
@@ -97,18 +98,34 @@ public struct ApprovalRequest: Codable, Equatable, Identifiable, Sendable {
     /// The full, human-readable request for a tool call. Never shortened: this is what the user approves.
     public static func fullText(tool: String, input: [String: Any]?) -> String {
         let i = input ?? [:]
-        if let cmd = i["command"] as? String { return cmd }
-        if let argv = i["command"] as? [String] { return argv.joined(separator: " ") }
+        // A command comes first, word for word. Whatever else came with it follows, except the fields that only
+        // describe it or bound how long it may run: leaving the sandbox, another working folder or raised
+        // permissions change what the same command does, and have to be seen before the click.
+        if i["command"] is String || i["command"] is [String] {
+            let command = (i["command"] as? String) ?? (i["command"] as? [String] ?? []).map(shellWord).joined(separator: " ")
+            let rest = i.filter { !["command", "description", "timeout", "timeout_ms"].contains($0.key) }
+            guard !rest.isEmpty, let data = try? JSONSerialization.data(withJSONObject: rest, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]),
+                  let json = String(data: data, encoding: .utf8) else { return command }
+            return command + "\n" + json
+        }
         var lines: [String] = []
         for key in ["file_path", "notebook_path", "path", "url", "pattern", "query"] {
             if let v = i[key] as? String { lines.append(v) }
         }
         let rest = i.filter { !["file_path", "notebook_path", "path", "url", "pattern", "query"].contains($0.key) }
-        if !rest.isEmpty, let data = try? JSONSerialization.data(withJSONObject: rest, options: [.prettyPrinted, .sortedKeys]),
+        if !rest.isEmpty, let data = try? JSONSerialization.data(withJSONObject: rest, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]),
            let json = String(data: data, encoding: .utf8) {
             lines.append(json)
         }
         return lines.isEmpty ? tool : lines.joined(separator: "\n")
+    }
+}
+
+extension ApprovalRequest {
+    /// One word of a command given as a list, written so that where it begins and ends stays visible.
+    static func shellWord(_ word: String) -> String {
+        let plain = !word.isEmpty && word.allSatisfy { $0.isLetter || $0.isNumber || "-_./=:,@%+".contains($0) }
+        return plain ? word : "'" + word.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
 

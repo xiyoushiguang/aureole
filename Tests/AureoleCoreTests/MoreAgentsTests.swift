@@ -127,7 +127,7 @@ final class AlwaysLabelTests: XCTestCase {
         L10n.language = .english
         let s: [[String: Any]] = [["type": "addDirectories", "directories": ["/tmp/x/proj"], "destination": "session"],
                                   ["type": "setMode", "mode": "acceptEdits", "destination": "session"]]
-        XCTAssertEqual(ApprovalRequest.describe(suggestions: s), "folder proj, accept edits (this session)")
+        XCTAssertEqual(ApprovalRequest.describe(suggestions: s), "folder /tmp/x/proj, accept edits (this session)")
         let saved: [[String: Any]] = [["type": "addRules", "rules": [["toolName": "Bash", "ruleContent": "npm test:*"]],
                                        "behavior": "allow", "destination": "localSettings"]]
         XCTAssertEqual(ApprovalRequest.describe(suggestions: saved), "Bash(npm test:*)")

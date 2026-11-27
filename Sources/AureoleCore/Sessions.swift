@@ -145,11 +145,23 @@ public struct HookEvent {
     }
 }
 
+extension AgentSession {
+    /// The session without what the user typed: the excerpt of the last prompt and the name taken from the first.
+    public var withoutPrompts: AgentSession {
+        var s = self
+        s.promptPreview = nil
+        s.firstPrompt = nil
+        return s
+    }
+}
+
 /// Pure state machine: folds one hook event into a session record.
 public enum SessionReducer {
     public static func apply(_ e: HookEvent, to existing: AgentSession?, now: Date, keepPrompt: Bool = true,
                              provider: ProviderID = .claude) -> AgentSession {
         var s = existing ?? AgentSession(provider: provider, sessionId: e.sessionId, cwd: e.cwd, now: now)
+        // Switched off, the excerpts kept earlier go too: "do not keep" is not "keep what you have".
+        if !keepPrompt { s = s.withoutPrompts }
         if !e.cwd.isEmpty { s.cwd = e.cwd }
         if let t = e.transcriptPath { s.transcriptPath = t }
         s.updatedAt = now
@@ -302,6 +314,8 @@ public struct SessionBoard: Equatable, Sendable {
     /// The session just finished a task of at least `doneMinimumTurn`.
     public static func finishedTask(_ s: AgentSession) -> Bool {
         guard s.state == .idle, s.lastEvent == "Stop", let start = s.turnStartedAt else { return false }
+        // A script that says it is done was told to say so; the minimum is for agents, whose every reply ends a turn.
+        if s.provider == .task { return true }
         return s.stateSince.timeIntervalSince(start) >= doneMinimumTurn
     }
 
@@ -537,9 +551,11 @@ public struct SessionAlerts: Sendable {
     /// "session|kind|stateSince" keys already announced.
     public private(set) var sent: Set<String> = []
 
-    public init(waitingAfter: TimeInterval?, announceDone: Bool) {
+    /// `sent`: what was announced before the app last quit, so starting again does not say it all twice.
+    public init(waitingAfter: TimeInterval?, announceDone: Bool, sent: Set<String> = []) {
         self.waitingAfter = waitingAfter
         self.announceDone = announceDone
+        self.sent = sent
     }
 
     /// `silent` sessions (muted, or one you are looking at right now) are marked as announced without an event,

@@ -48,6 +48,11 @@ public struct LedgerCursor: Codable, Equatable, Sendable {
     /// Codex: running totals at the last token_count, and the model of the current turn.
     public var codexTotal: TokenTally?
     public var codexModel: String?
+    /// When the newest call counted from this file was made.
+    public var lastAt: Date?
+    /// Set while a file that was rewritten or cut short is read again from its start: calls up to this moment
+    /// were counted the first time round.
+    public var countedUntil: Date?
     public init() {}
 }
 
@@ -354,7 +359,14 @@ public enum LedgerScanner {
         guard let h = FileHandle(forReadingAtPath: src.url.path) else { return false }
         defer { try? h.close() }
         let size = (try? h.seekToEnd()) ?? 0
-        if size < cursor.offset { cursor = LedgerCursor() }   // rewritten or truncated: start over
+        if size < cursor.offset {
+            // Rewritten or cut short: start over, remembering how far the counting had got. Without that, what
+            // the file still holds from before would be added a second time.
+            let counted = cursor.countedUntil.flatMap { a in cursor.lastAt.map { max(a, $0) } } ?? cursor.lastAt ?? cursor.countedUntil
+            cursor = LedgerCursor()
+            cursor.countedUntil = counted
+            cursor.lastAt = counted
+        }
         guard size > cursor.offset else { return false }
         try? h.seek(toOffset: cursor.offset)
         var changed = false
@@ -375,6 +387,16 @@ public enum LedgerScanner {
         return changed
     }
 
+    /// Adds a call, unless the file is being read a second time and this call was counted the first time.
+    static func count(_ call: LedgerCall, _ provider: ProviderID, _ src: Source, _ cursor: inout LedgerCursor, _ ledger: inout TokenLedger) {
+        if let until = cursor.countedUntil {
+            if call.at <= until { return }
+            cursor.countedUntil = nil
+        }
+        cursor.lastAt = max(cursor.lastAt ?? call.at, call.at)
+        ledger.add(call, provider: provider, session: src.session)
+    }
+
     /// False when the message was counted already (agents write a message again as it fills in).
     static func remember(_ id: String, in cursor: inout LedgerCursor) -> Bool {
         if cursor.recentIds.contains(id) { return false }
@@ -393,7 +415,7 @@ public enum LedgerScanner {
             if let t = TranscriptLines.claudeTitle(line) { ledger.titles[src.session] = t; return true }
             guard let (id, call) = TranscriptLines.claude(line) else { return false }
             if let id { if !remember(id, in: &cursor) { return false } }
-            ledger.add(call, provider: .claude, session: src.session)
+            count(call, .claude, src, &cursor, &ledger)
             return true
         case .codex:
             if ledger.folders[src.session] == nil, line.range(of: Data("\"session_meta\"".utf8)) != nil,
@@ -402,7 +424,7 @@ public enum LedgerScanner {
                 ledger.folders[src.session] = cwd
             }
             guard let call = TranscriptLines.codex(line, cursor: &cursor) else { return false }
-            ledger.add(call, provider: .codex, session: src.session)
+            count(call, .codex, src, &cursor, &ledger)
             return true
         case .gemini:
             guard let (id, call) = TranscriptLines.gemini(line) else {
@@ -411,13 +433,13 @@ public enum LedgerScanner {
                 return false
             }
             if let id { if !remember(id, in: &cursor) { return false } }
-            ledger.add(call, provider: .gemini, session: src.session)
+            count(call, .gemini, src, &cursor, &ledger)
             return true
         case .opencode:
             guard let (id, call, cwd) = TranscriptLines.opencode(line) else { return false }
             if ledger.folders[src.session] == nil, let cwd { ledger.folders[src.session] = cwd }
             if let id { if !remember(id, in: &cursor) { return false } }
-            ledger.add(call, provider: .opencode, session: src.session)
+            count(call, .opencode, src, &cursor, &ledger)
             return true
         case .task:
             return false

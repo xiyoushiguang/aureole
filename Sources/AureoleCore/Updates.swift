@@ -66,3 +66,26 @@ public enum UpdateChecker {
         return nums.contains(nil) ? [] : nums.compactMap { $0 }
     }
 }
+
+/// The last step of an update: the script that runs after the app has quit and puts the new copy in its place.
+public enum UpdateSwap {
+    /// `$1` the installed app, `$2` the new copy (already checked), `$3` where the old one goes (the Trash).
+    /// Afterwards the app at `$1` is either the old one, whole, or the new one, whole. The new copy is made
+    /// beside the app first and moved in only when the copying finished: copying straight into place left half
+    /// an app there when it failed part-way (a full disk), with the old one in the Trash.
+    public static func script(waitingFor pid: Int32, open: Bool = true) -> String {
+        """
+        while kill -0 \(pid) 2>/dev/null; do sleep 0.2; done
+        new="$1.updating"
+        [ -e "$new" ] && mv "$new" "$3.incomplete"
+        if /usr/bin/ditto "$2" "$new"; then
+            /usr/bin/xattr -dr com.apple.quarantine "$new" 2>/dev/null
+            if mv "$1" "$3"; then
+                mv "$new" "$1" || mv "$3" "$1"
+            fi
+        fi
+        [ -e "$new" ] && mv "$new" "$3.incomplete"
+        \(open ? "/usr/bin/open \"$1\"" : ":")
+        """
+    }
+}

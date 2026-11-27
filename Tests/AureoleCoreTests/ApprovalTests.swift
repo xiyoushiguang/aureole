@@ -18,7 +18,7 @@ final class ApprovalTests: XCTestCase {
     func testFullTextIsNeverShortened() {
         let long = String(repeating: "x", count: 5000)
         XCTAssertEqual(ApprovalRequest.fullText(tool: "Bash", input: ["command": long]).count, 5000)
-        XCTAssertEqual(ApprovalRequest.fullText(tool: "shell", input: ["command": ["bash", "-lc", "npm test"]]), "bash -lc npm test")
+        XCTAssertEqual(ApprovalRequest.fullText(tool: "shell", input: ["command": ["bash", "-lc", "npm test"]]), "bash -lc 'npm test'")
         let edit = ApprovalRequest.fullText(tool: "Edit", input: ["file_path": "/a/b.swift", "old_string": "x", "new_string": "y"])
         XCTAssertTrue(edit.hasPrefix("/a/b.swift\n"))
         XCTAssertTrue(edit.contains("\"new_string\" : \"y\""))

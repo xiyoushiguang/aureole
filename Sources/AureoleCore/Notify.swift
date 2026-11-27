@@ -41,6 +41,19 @@ public enum UsageEvent: Equatable, Sendable {
         }
     }
 
+    /// The same event for someone who does not want what a session is called, or what it is running, to leave
+    /// the panel: which agent, and that it waits or is done. Usage events carry no such thing and stay as they are.
+    public var withoutDetails: UsageEvent {
+        switch self {
+        case .sessionWaiting(let p, _, _, let since, let question):
+            return .sessionWaiting(provider: p, name: L10n.f("A %@ session", p.displayName), detail: nil, since: since, question: question)
+        case .sessionDone(let p, _, let took):
+            return .sessionDone(provider: p, name: L10n.f("A %@ session", p.displayName), took: took)
+        default:
+            return self
+        }
+    }
+
     public var body: String {
         switch self {
         case .threshold(_, let w, _):
