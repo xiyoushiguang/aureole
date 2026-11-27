@@ -462,16 +462,17 @@ enum TerminalJumper {
             if let url { NSWorkspace.shared.open(url) }
             return
         }
-        AureoleLog.shared.log("terminal jump: \(s.termProgram ?? s.bundleId ?? "unknown app") \(s.tty ?? "no tty") \(s.cwd)")
-        if let tty = s.tty, let program = s.termProgram {
-            let dev = "/dev/\(tty)"
+        AureoleLog.shared.log("terminal jump: \(s.termProgram ?? s.bundleId ?? "unknown app") \(s.tty ?? "no tty") \((s.cwd as NSString).abbreviatingWithTildeInPath)")
+        // What goes into a script goes in as a string literal: a folder's name can hold quotes and line breaks.
+        if let tty = s.tty, AppleScriptText.isDeviceName(tty), let program = s.termProgram {
+            let dev = AppleScriptText.literal("/dev/\(tty)")
             switch program {
             case "Apple_Terminal":
                 run(script: """
                 tell application "Terminal"
                     repeat with w in windows
                         repeat with t in tabs of w
-                            if tty of t is "\(dev)" then
+                            if tty of t is \(dev) then
                                 -- Hold the window by id: "item n of windows" points elsewhere once the order changes.
                                 set target to window id (id of w)
                                 set selected tab of target to t
@@ -486,7 +487,7 @@ enum TerminalJumper {
                             end if
                         end repeat
                     end repeat
-                    return "no tab with \(dev)"
+                    return "no tab with " & \(dev)
                 end tell
                 """)
             case "iTerm.app":
@@ -495,7 +496,7 @@ enum TerminalJumper {
                     repeat with w in windows
                         repeat with t in tabs of w
                             repeat with s in sessions of t
-                                if tty of s is "\(dev)" then
+                                if tty of s is \(dev) then
                                     try
                                         if miniaturized of w then set miniaturized of w to false
                                     end try
@@ -507,7 +508,7 @@ enum TerminalJumper {
                             end repeat
                         end repeat
                     end repeat
-                    return "no session with \(dev)"
+                    return "no session with " & \(dev)
                 end tell
                 """)
             default:
@@ -529,7 +530,7 @@ enum TerminalJumper {
                 repeat with w in windows
                     repeat with t in tabs of w
                         repeat with term in terminals of t
-                            if working directory of term is "\(s.cwd)" then
+                            if working directory of term is \(AppleScriptText.literal(s.cwd)) then
                                 focus term
                                 activate
                                 return

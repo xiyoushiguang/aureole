@@ -63,7 +63,8 @@ public struct CodexCredentials: Sendable {
 public enum CodexCredentialReader {
     public static func read(from url: URL) throws -> CodexCredentials {
         guard let data = try? Data(contentsOf: url) else {
-            throw ProviderError.signedOut(L10n.f("No Codex sign-in found (%@ missing). Run `codex` and log in first.", url.path))
+            throw ProviderError.signedOut(L10n.f("No Codex sign-in found (%@ missing). Run `codex` and log in first.",
+                                                 (url.path as NSString).abbreviatingWithTildeInPath))
         }
         return try parse(data)
     }

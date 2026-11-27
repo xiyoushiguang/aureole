@@ -341,9 +341,12 @@ public enum ChannelDispatcher {
     }
 
     static func render(_ template: String, _ event: UsageEvent) -> String {
+        // As a JSON encoder writes a string, without its quotes: a tab or any other control character in a
+        // session's name or a command would otherwise make the whole body something no server can read.
         func esc(_ s: String) -> String {
-            s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-                .replacingOccurrences(of: "\n", with: "\\n")
+            guard let data = try? JSONSerialization.data(withJSONObject: [s], options: [.withoutEscapingSlashes]),
+                  let text = String(data: data, encoding: .utf8), text.count >= 4 else { return "" }
+            return String(text.dropFirst(2).dropLast(2))
         }
         return template
             .replacingOccurrences(of: "{{title}}", with: esc(event.title))
@@ -353,7 +356,22 @@ public enum ChannelDispatcher {
             .replacingOccurrences(of: "{{percent}}", with: event.percent.map { String(Int($0.rounded())) } ?? "")
     }
 
-    static func runShell(_ event: UsageEvent, _ config: ChannelConfig) throws {
+    /// What a script wrote to stderr, as it wrote it; only the start is kept.
+    private final class Heard: @unchecked Sendable {
+        private let lock = NSLock()
+        private var data = Data()
+        func add(_ more: Data) {
+            lock.lock(); defer { lock.unlock() }
+            if data.count < 4096 { data.append(more.prefix(4096 - data.count)) }
+        }
+        var text: String {
+            lock.lock(); defer { lock.unlock() }
+            return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    /// Runs the user's script with the event. It gets `timeout` seconds; one that has not ended by then is stopped.
+    static func runShell(_ event: UsageEvent, _ config: ChannelConfig, timeout: TimeInterval = 30) throws {
         guard !config.target.isEmpty, FileManager.default.isExecutableFile(atPath: config.target) else {
             throw ChannelDispatchError.badConfig("\(config.name): script path is not executable")
         }
@@ -370,14 +388,29 @@ public enum ChannelDispatcher {
         p.standardInput = input
         p.standardError = err
         p.standardOutput = FileHandle.nullDevice
-        try p.run()
-        input.fileHandleForWriting.write(render(ChannelConfig.defaultWebhookTemplate, event).data(using: .utf8)!)
-        try? input.fileHandleForWriting.close()
-        p.waitUntilExit()
-        guard p.terminationStatus == 0 else {
-            let msg = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            throw ChannelDispatchError.shell(p.terminationStatus, msg.trimmingCharacters(in: .whitespacesAndNewlines))
+        // Listen while it runs. A script that writes more than a pipe holds waits for a reader; reading only
+        // after it exits meant it never exited, and neither did the task waiting for it.
+        let heard = Heard()
+        err.fileHandleForReading.readabilityHandler = { handle in
+            let more = handle.availableData
+            if more.isEmpty { handle.readabilityHandler = nil } else { heard.add(more) }
         }
+        let ended = DispatchSemaphore(value: 0)
+        p.terminationHandler = { _ in ended.signal() }
+        // A script that leaves without reading its input must not take us with it.
+        signal(SIGPIPE, SIG_IGN)
+        try p.run()
+        try? input.fileHandleForWriting.write(contentsOf: render(ChannelConfig.defaultWebhookTemplate, event).data(using: .utf8)!)
+        try? input.fileHandleForWriting.close()
+        guard ended.wait(timeout: .now() + timeout) == .success else {
+            p.terminate()
+            err.fileHandleForReading.readabilityHandler = nil
+            throw ChannelDispatchError.shell(-1, "no answer after \(Int(timeout)) s, stopped")
+        }
+        // Whatever it said last may still be in the pipe.
+        err.fileHandleForReading.readabilityHandler = nil
+        if let rest = try? err.fileHandleForReading.readToEnd() { heard.add(rest) }
+        guard p.terminationStatus == 0 else { throw ChannelDispatchError.shell(p.terminationStatus, heard.text) }
     }
 }
 

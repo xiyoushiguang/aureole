@@ -1,4 +1,5 @@
 #!/bin/bash
+# The app listens only when it was started with --dev (scripts/run.sh, or: open Aureole.app --args --dev).
 # Send a debug command to the running app: scripts/dev-cmd.sh open|close|refresh|hooks-install|hooks-remove|statusline-install|statusline-remove|welcome|codex-hooks-install|codex-hooks-remove|gemini-hooks-install|gemini-hooks-remove|opencode-install|opencode-remove|notify-test
 set -euo pipefail
 case "${1:-}" in open|close|refresh|hooks-install|hooks-remove|statusline-install|statusline-remove|welcome|codex-hooks-install|codex-hooks-remove|gemini-hooks-install|gemini-hooks-remove|opencode-install|opencode-remove|notify-test|update-dryrun) ;; *) echo "usage: $0 open|close|refresh|hooks-install|hooks-remove|statusline-install|statusline-remove|welcome|codex-hooks-install|codex-hooks-remove|gemini-hooks-install|gemini-hooks-remove|opencode-install|opencode-remove|notify-test|update-dryrun"; exit 2;; esac

@@ -433,7 +433,11 @@ public enum HookInstaller {
     }
 
     public static func read(url: URL = settingsURL) throws -> [String: Any] {
-        guard let data = try? Data(contentsOf: url), !data.isEmpty else { return [:] }
+        // Only a file that is not there is "no settings yet". One that is there but cannot be read has to stop
+        // the caller: writing back "nothing, plus our hooks" would replace everything the user had in it.
+        guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
+        let data = try Data(contentsOf: url)
+        guard !data.isEmpty else { return [:] }
         guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw NSError(domain: "Aureole", code: 1, userInfo: [NSLocalizedDescriptionKey: "settings.json is not a JSON object"])
         }
