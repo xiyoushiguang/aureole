@@ -99,7 +99,8 @@ final class SettingsStore: ObservableObject {
         nativeNotifications = d.object(forKey: "nativeNotifications") as? Bool ?? true
         claudeCredentialSource = ClaudeCredentialSource(rawValue: d.string(forKey: "claudeCredentialSource") ?? "") ?? .securityCLI
         language = Language(rawValue: d.string(forKey: "language") ?? "") ?? .system
-        panelStyle = PanelStyle(rawValue: d.string(forKey: "panelStyle") ?? "") ?? .solid
+        // `AUREOLE_PANEL_STYLE=glass` starts a demo (which has no saved settings) on the glass panel.
+        panelStyle = PanelStyle(rawValue: ProcessInfo.processInfo.environment["AUREOLE_PANEL_STYLE"] ?? d.string(forKey: "panelStyle") ?? "") ?? .solid
         panelLayout = PanelLayout(rawValue: d.string(forKey: "panelLayout") ?? "") ?? .horizon
         notifyWaitingMinutes = d.object(forKey: "notifyWaitingMinutes") as? Int ?? 2
         notifyDone = d.object(forKey: "notifyDone") as? Bool ?? true
