@@ -13,25 +13,28 @@ enum DemoData {
     static let docs = "demo-gemini-docs"
     static let nightly = "task-nightly-backup"
 
-    static func usage(now: Date) -> [ProviderSnapshot] {
+    static func usage(now: Date, peak: Double? = nil) -> [ProviderSnapshot] {
         let start = now.addingTimeInterval(-160 * 60)          // the 5-hour window began 2 h 40 min ago
         let reset = start.addingTimeInterval(5 * 3600)
         let weekReset = now.addingTimeInterval(3 * 86400 + 5 * 3600)
         var out: [ProviderSnapshot] = []
+        // `AUREOLE_DEMO_PEAK=24` (or 96) draws the same afternoon with less (or more) of the window used.
+        let peak = min(100, max(1, peak ?? Double(ProcessInfo.processInfo.environment["AUREOLE_DEMO_PEAK"] ?? "") ?? 62))
+        let k = peak / 62
         // Readings every two minutes: a slow first hour, then two busy sessions.
         var used = 0.0
         var t = start
         while t < now {
             let m = t.timeIntervalSince(start) / 60
-            used += m < 60 ? 0.3 : m < 100 ? 0.9 : 1.2
+            used += (m < 60 ? 0.3 : m < 100 ? 0.9 : 1.2) * k
             let windows = [
-                UsageWindow(key: "five_hour", label: "5h", kind: .fiveHour, usedPercent: min(used, 62), resetsAt: reset, duration: 5 * 3600),
+                UsageWindow(key: "five_hour", label: "5h", kind: .fiveHour, usedPercent: min(used, peak), resetsAt: reset, duration: 5 * 3600),
                 UsageWindow(key: "seven_day", label: "Week", kind: .sevenDay, usedPercent: 41, resetsAt: weekReset, duration: 7 * 86400),
             ]
             out.append(ProviderSnapshot(provider: .claude, windows: windows, fetchedAt: t, planLabel: "Max"))
             t = t.addingTimeInterval(120)
         }
-        let last = UsageWindow(key: "five_hour", label: "5h", kind: .fiveHour, usedPercent: 62, resetsAt: reset, duration: 5 * 3600)
+        let last = UsageWindow(key: "five_hour", label: "5h", kind: .fiveHour, usedPercent: peak, resetsAt: reset, duration: 5 * 3600)
         out.append(ProviderSnapshot(provider: .claude, windows: [last, UsageWindow(key: "seven_day", label: "Week", kind: .sevenDay,
                                                                                     usedPercent: 41, resetsAt: weekReset, duration: 7 * 86400)],
                                     fetchedAt: now, planLabel: "Max"))
@@ -48,7 +51,8 @@ enum DemoData {
         var approvals: [ApprovalRequest]
     }
 
-    static func sessions(now: Date) -> Sessions {
+    /// `notesDone`: the release-notes session has just finished its turn, instead of still working.
+    static func sessions(now: Date, notesDone: Bool = false) -> Sessions {
         func ago(_ minutes: Double) -> Date { now.addingTimeInterval(-minutes * 60) }
         func session(_ id: String, _ p: ProviderID, cwd: String, started: Double) -> AgentSession {
             var s = AgentSession(provider: p, sessionId: id, cwd: cwd, now: ago(started))
@@ -73,6 +77,11 @@ enum DemoData {
         notes.lastTool = "Edit"; notes.lastDetail = "CHANGELOG.md"
         notes.promptPreview = "Draft the notes for 2.4"
         notes.updatedAt = ago(0.3)
+        if notesDone {
+            notes.set(.idle, at: ago(0.05))
+            notes.lastEvent = "Stop"
+            notes.updatedAt = ago(0.05)
+        }
 
         var login = session(Self.login, .claude, cwd: "~/work/web", started: 150)
         login.set(.working, at: ago(148)); login.set(.idle, at: ago(110)); login.set(.working, at: ago(17))

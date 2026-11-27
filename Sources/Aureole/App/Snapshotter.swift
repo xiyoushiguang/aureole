@@ -22,7 +22,7 @@ enum Snapshotter {
                              trouble: (.codex, .signedOut(L10n.f("Codex token was rejected (%d). Run `codex` once to refresh your sign-in.", 401)))),
                         Shot(name: "panel-stale", open: true, focus: nil,
                              trouble: (.codex, .expired(L10n.f("%@ token expired. It renews by itself the next time %@ runs.", "Codex", "Codex")))),
-                        // The provider on the horizon itself unreadable: its headline must stop promising.
+                        // The provider on the horizon itself unreadable: its headline stops promising, the sky goes grey.
                         Shot(name: "panel-stale-main", open: true, focus: nil,
                              trouble: (.claude, .expired(L10n.f("%@ token expired. It renews by itself the next time %@ runs.", "Claude", "Claude Code"))))]
 
