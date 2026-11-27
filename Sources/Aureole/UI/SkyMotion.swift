@@ -115,6 +115,27 @@ final class SkyMotionView: NSView {
         layer?.addSublayer(field)
         layer?.addSublayer(fallen)
         startTrace()
+        startBlink()
+    }
+
+    /// `AUREOLE_SKY_BLINK=<seconds>,<file>` stops the motion and starts it again every that many seconds, writing
+    /// the clock time of each change to the file: for measuring what the motion costs, on against off, with
+    /// everything else on the screen the same.
+    private func startBlink() {
+        guard let raw = ProcessInfo.processInfo.environment["AUREOLE_SKY_BLINK"] else { return }
+        let parts = raw.split(separator: ",", maxSplits: 1).map(String.init)
+        guard parts.count == 2, let every = Double(parts[0]) else { return }
+        FileManager.default.createFile(atPath: parts[1], contents: nil)
+        let timer = Timer(timeInterval: every, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.window != nil, self.moving, let out = FileHandle(forWritingAtPath: parts[1]) else { return }
+                self.setRunning(!self.running, eased: false)
+                out.seekToEndOfFile()
+                out.write("\(Date().timeIntervalSince1970) \(self.running ? "on" : "off")\n".data(using: .utf8)!)
+                try? out.close()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     /// `AUREOLE_SKY_TRACE=<file>` writes, twice a second, where the window server has the moving layers right now
@@ -183,7 +204,7 @@ final class SkyMotionView: NSView {
             build(recolour: recolour)
             built = (bounds.size, sun, sky)
         }
-        setRunning(moving)
+        if !settled || ProcessInfo.processInfo.environment["AUREOLE_SKY_BLINK"] == nil || !moving { setRunning(moving) }
         answer()
         settled = true
     }
