@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.7.5 — 2026-11-27
+
+Fixes from an outside review of 0.7.4, security first, and the weekly reset time.
+
+- **A folder's name could run as a script (Ghostty).** Jumping from the panel to a session's terminal put
+  the session's working folder into an AppleScript as it was. A folder name with a double quote in it
+  ended the string, and what followed ran as script, with your account's rights, when you clicked the
+  session. Folder names now go in as string literals, and a terminal device name that does not look like
+  one is not used at all. If you use Ghostty, update.
+- **The development commands are for development.** Every build listened for local notifications that
+  install and remove the agents' hooks, the status line and the opencode plug-in, and any program on the
+  Mac can post one. They are listened for only when the app is started with `--dev`, as `scripts/run.sh`
+  does.
+- **A settings file that cannot be read is not an empty one.** Installing hooks treated an unreadable
+  `settings.json` as empty, and the write that followed would have replaced everything in it. Only a
+  missing file counts as empty now.
+- **Approving from the panel shows all of what you approve.** A command is followed by whatever came
+  with it that changes what it does: leaving the sandbox, another working folder, raised permissions. A
+  command given as a list keeps its word boundaries, and "always allow" for a folder names the whole
+  path. Settings now says whom this option trusts: your click reaches the agent through a folder that
+  other programs running under your account can write to as well.
+- **Notifications without names.** New switch in Settings → Sessions: "Leave session names and commands
+  out of notifications". With it on, a notification says only which agent is waiting or done. It applies
+  to macOS notifications and every channel, and is off by default.
+- **Less in the log and in a copied diagnosis.** The log file and its folder are readable by your account
+  only, including the files earlier versions left; a jump logs its folder without the home path; "Copy
+  diagnostics" writes `~` for the home folder. With prompt excerpts switched off, excerpts kept earlier
+  are no longer shown, and are removed from a session's file at its next event.
+- **The weekly line says when it resets.** "Claude weekly 41%" in the panel's corner is now
+  "Claude weekly 41% · Mon 04:59 reset".
+- **An old number stops promising.** When the provider on the horizon cannot be refreshed, its headline
+  turns grey with a question mark and the reason under it, and no forecast is drawn; until now only the
+  number in the corner did that. A token that ran out reads as that in the welcome window and in
+  Settings → Providers, instead of "Connected" in one and "Waiting…" in the other.
+- **"Used N%" no longer sits on the "Now" label.** From about 78% used the two overlapped. The label now
+  keeps clear, and a forecast that is minutes away writes its time above the pill.
+- **An update that fails half-way leaves the old app.** The new copy is made beside the app and moved in
+  whole. Before, a copy that failed part-way (a full disk) left half an app in place and the old one in
+  the Trash.
+- **Smaller fixes.** The hint to route work elsewhere looks at the weekly window too, not only at five
+  hours. A script lane that reports `done` shows as done however short the job. A finish announced
+  before the app quit is not announced again when it starts within ten minutes. With the list layout in
+  use, a permission request is no longer held back for a panel that has no card to answer it. A
+  transcript that was rewritten shorter is not counted twice in Spend. A tab in a session's name no
+  longer makes a webhook body invalid JSON. A notification script that writes a lot to stderr no longer
+  hangs, and one that never ends is stopped after 30 seconds. A timestamp far out of range in a
+  transcript no longer crashes the app.
+
 ## 0.7.4 — 2026-11-18
 
 - **No more "sign-in needed" for a token that simply ran out.** Claude Code and Codex renew their tokens
