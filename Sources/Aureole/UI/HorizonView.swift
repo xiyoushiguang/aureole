@@ -95,6 +95,11 @@ struct RGB: Equatable {
     static func mix(_ a: RGB, _ b: RGB, _ k: Double) -> RGB {
         RGB(r: a.r + (b.r - a.r) * k, g: a.g + (b.g - a.g) * k, b: a.b + (b.b - a.b) * k)
     }
+    static let zero = RGB(r: 0, g: 0, b: 0)
+    static func + (a: RGB, b: RGB) -> RGB { RGB(r: a.r + b.r, g: a.g + b.g, b: a.b + b.b) }
+    static func - (a: RGB, b: RGB) -> RGB { RGB(r: a.r - b.r, g: a.g - b.g, b: a.b - b.b) }
+    func scaled(by k: Double) -> RGB { RGB(r: r * k, g: g * k, b: b * k) }
+    var squared: Double { r * r + g * g + b * b }
 }
 
 /// The colours of one sky.
@@ -113,6 +118,10 @@ struct SkyPalette: Equatable {
         (self.low, self.bloom, self.limb, self.day, self.starlight) = (RGB(hex: low), RGB(hex: bloom), RGB(hex: limb), RGB(hex: day), starlight)
     }
 
+    init(low: RGB, bloom: RGB, limb: RGB, day: RGB, starlight: Double) {
+        (self.low, self.bloom, self.limb, self.day, self.starlight) = (low, bloom, limb, day, starlight)
+    }
+
     /// Part of the way from one sky to another.
     static func mix(_ a: SkyPalette, _ b: SkyPalette, _ k: Double) -> SkyPalette {
         var p = a
@@ -121,6 +130,21 @@ struct SkyPalette: Equatable {
         p.starlight = a.starlight + (b.starlight - a.starlight) * k
         return p
     }
+}
+
+/// So SwiftUI can ease one sky into the next when the mood changes.
+extension SkyPalette: VectorArithmetic {
+    static var zero: SkyPalette { SkyPalette(low: .zero, bloom: .zero, limb: .zero, day: .zero, starlight: 0) }
+    static func + (a: SkyPalette, b: SkyPalette) -> SkyPalette {
+        SkyPalette(low: a.low + b.low, bloom: a.bloom + b.bloom, limb: a.limb + b.limb, day: a.day + b.day, starlight: a.starlight + b.starlight)
+    }
+    static func - (a: SkyPalette, b: SkyPalette) -> SkyPalette {
+        SkyPalette(low: a.low - b.low, bloom: a.bloom - b.bloom, limb: a.limb - b.limb, day: a.day - b.day, starlight: a.starlight - b.starlight)
+    }
+    mutating func scale(by k: Double) {
+        self = SkyPalette(low: low.scaled(by: k), bloom: bloom.scaled(by: k), limb: limb.scaled(by: k), day: day.scaled(by: k), starlight: starlight * k)
+    }
+    var magnitudeSquared: Double { low.squared + bloom.squared + limb.squared + day.squared + starlight * starlight }
 }
 
 /// One instant of the sky in motion. `--film` draws the panel frame by frame with these; the live panel has none
@@ -150,17 +174,25 @@ extension EnvironmentValues {
 }
 
 /// The planet under the lanes: night, with the sun's light pooling under "now".
-struct GroundBackdrop: View {
+struct GroundBackdrop: View, Animatable {
     let scene: HorizonScene
     /// Panel points per canvas unit.
     let scale: CGFloat
-    let sky: SkyPalette?
+    /// False paints the plain night.
+    let lit: Bool
+    /// Eased from one mood to the next, in step with the sky above.
+    var sky: SkyPalette
+
+    var animatableData: SkyPalette {
+        get { sky }
+        set { sky = newValue }
+    }
 
     var body: some View {
         Canvas { ctx, size in
             let all = Path(CGRect(origin: .zero, size: size))
             ctx.fill(all, with: .color(HorizonColor.ground))
-            guard let sky else { return }
+            guard lit else { return }
             // The same light the arc's canvas paints on the planet, from the same sun: this view begins one
             // point above that canvas's bottom edge.
             ctx.translateBy(x: 0, y: 1 - scene.layout.height * scale)
@@ -228,10 +260,15 @@ struct HorizonPanel: View {
         let mood = SkyMood.enabled
             ? SkyMood(window: inputs.window, stale: store.stale.contains(inputs.main), runsDry: scene.dryFrom != nil) : nil
         let sky = mood.map { film?.palette ?? $0.palette }
+        let ambient = settings.ambientMotion && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        // The sky moves while the numbers are live; with old numbers it stands still.
+        let moving = (ambient || SkyMotionView.pose != nil) && film == nil && mood != nil && mood != .stale
         VStack(spacing: 0) {
             ZStack(alignment: .topLeading) {
                 HorizonArc(inputs: inputs, now: now, board: board, weights: weights, used: inputs.window?.usedPercent ?? 0,
-                           ambient: settings.ambientMotion && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, sky: sky, film: film)
+                           ambient: ambient, sky: sky, film: film, moving: moving, skyShown: sky ?? .zero, motion: moving ? 1 : 0)
+                    // A change of mood takes its time, and the number sliding with it keeps the same pace.
+                    .animation(.easeInOut(duration: SkyMotion.fade), value: SkyState(sky: sky, moving: moving))
                     .animation(.easeInOut(duration: 0.9), value: inputs.window?.usedPercent)
                 HStack(alignment: .top, spacing: 16) {
                     // The waiting capsule sits under the conclusion, in the sky left of "now", which is otherwise empty.
@@ -260,7 +297,8 @@ struct HorizonPanel: View {
         }
         .background(alignment: .bottom) {
             // The planet's night side carries on under the lanes and the footer.
-            GroundBackdrop(scene: scene, scale: s, sky: sky).padding(.top, scene.layout.height * s - 1)
+            GroundBackdrop(scene: scene, scale: s, lit: sky != nil, sky: sky ?? .zero).padding(.top, scene.layout.height * s - 1)
+                .animation(.easeInOut(duration: SkyMotion.fade), value: sky)
         }
         .overlay(alignment: .topTrailing) {
             if let id = focus, let lane = scene.lanes.first(where: { $0.id == id }) {
@@ -417,17 +455,31 @@ struct HorizonArc: View, Animatable {
     var sky: SkyPalette?
     /// The instant of a film being drawn; nil on the live panel.
     var film: SkyFilm?
+    /// Whether the sky's own motion runs: twinkling stars, the breathing edge, the sliding light, meteors.
+    var moving = false
+    /// The sky as drawn right now: part-way from the last mood to `sky` just after the mood changed.
+    var skyShown: SkyPalette = .zero
+    /// 1 while the sky moves, 0 at rest, eased between the two so the still sky and the moving one meet without a jump.
+    var motion: Double = 0
 
-    var animatableData: Double {
-        get { used }
-        set { used = newValue }
+    var animatableData: AnimatablePair<Double, AnimatablePair<SkyPalette, Double>> {
+        get { AnimatablePair(used, AnimatablePair(skyShown, motion)) }
+        set { used = newValue.first; skyShown = newValue.second.first; motion = newValue.second.second }
     }
 
     var body: some View {
         let scene = HorizonScene(layout: .band, now: now, window: window(used), samples: inputs.samples,
                                  prediction: inputs.prediction, sessions: board, weights: weights)
+        // A film brings its own colours for every frame.
+        let look = sky.map { film == nil ? skyShown : $0 }
         ZStack {
-            HorizonCanvas(scene: scene, layer: .sky, sky: sky, film: film)
+            HorizonCanvas(scene: scene, layer: .sky, sky: look, film: film, motion: film == nil ? motion : 0)
+            // What moves in the sky is on Core Animation layers above the still picture.
+            if film == nil, let sky {
+                SkyMotion(scene: scene, sky: sky, moving: moving,
+                          done: Dictionary(board.done.map { ($0.sessionId, $0.stateSince) }, uniquingKeysWith: { a, _ in a }))
+                    .allowsHitTesting(false)
+            }
             // The lit stretch breathes slowly: usage is being spent. The blurred glow is rendered once into a
             // bitmap and only that bitmap's opacity animates; animating the Canvas itself redrew the blur every
             // frame (a quarter of a CPU core while the panel was open).
@@ -444,7 +496,7 @@ struct HorizonArc: View, Animatable {
                     .position(x: box.midX * k, y: box.midY * k)
                 }
             }
-            HorizonCanvas(scene: scene, layer: .main, sky: sky, film: film)
+            HorizonCanvas(scene: scene, layer: .main, sky: look, film: film)
             if !ambient, let (from, to) = scene.forecast {
                 // Still: the same dashes, not moving.
                 GeometryReader { geo in
@@ -502,11 +554,15 @@ struct HorizonArc: View, Animatable {
 /// Drawn as separate layers so the parts that move (the breathing glow; the flowing forecast is a Core
 /// Animation layer of its own) never force the whole picture, with its blur, to be redrawn.
 struct HorizonCanvas: View {
-    enum Layer { case sky, glow, main }
+    /// `breath` and `glint` are the parts of the sky that Core Animation moves (see `SkyMotion`).
+    enum Layer { case sky, breath, glint, glow, main }
     let scene: HorizonScene
     var layer: Layer = .main
     var sky: SkyPalette?
     var film: SkyFilm?
+    /// How much of the moving sky is handed to `SkyMotion`'s layers, 0…1: this picture then leaves out the
+    /// twinkling stars and the part of the edge's light that breathes.
+    var motion: Double = 0
 
     var body: some View {
         Canvas { ctx, size in
@@ -514,9 +570,104 @@ struct HorizonCanvas: View {
             ctx.scaleBy(x: size.width / L.width, y: size.width / L.width)
             switch layer {
             case .sky: drawSky(&ctx, L)
+            case .breath: drawBreath(&ctx, L)
+            case .glint: drawGlint(&ctx, L)
             case .glow: drawGlow(&ctx, L)
             case .main: draw(&ctx, L)
             }
+        }
+    }
+
+    /// How far the planet's edge and the sun's light dim at the bottom of a breath.
+    static let edgeSwing = 0.28, bloomSwing = 0.14
+
+    /// Light spreading from the sun on the horizon.
+    private func paintBloom(_ ctx: inout GraphicsContext, _ L: HorizonLayout, _ sky: SkyPalette, share: Double) {
+        let bloom = sky.bloom.color
+        ctx.fill(Path(CGRect(x: 0, y: 0, width: L.width, height: L.height)), with: .radialGradient(Gradient(stops: [
+            .init(color: bloom.opacity(0.30 * share), location: 0),
+            .init(color: bloom.opacity(0.11 * share), location: 0.34),
+            .init(color: bloom.opacity(0), location: 1)]), center: scene.sun, startRadius: 0, endRadius: 470))
+    }
+
+    /// The aureole: air on the planet's edge, bright by the sun and thinning into the night.
+    private func paintAir(_ ctx: inout GraphicsContext, _ L: HorizonLayout, _ sky: SkyPalette, share: Double) {
+        let all = Path(CGRect(x: 0, y: 0, width: L.width, height: L.height))
+        let limb = sky.limb.color
+        ctx.drawLayer { air in
+            air.fill(all, with: .radialGradient(Gradient(stops: [
+                .init(color: limb.opacity(0.62 * share), location: 0),
+                .init(color: limb.opacity(0.20 * share), location: 0.28),
+                .init(color: limb.opacity(0), location: 1)]), center: L.center, startRadius: L.horizon, endRadius: L.horizon + 58))
+            air.blendMode = .destinationIn
+            air.fill(all, with: .radialGradient(Gradient(colors: [.black, .black.opacity(0.30)]), center: scene.sun, startRadius: 80, endRadius: 640))
+        }
+    }
+
+    /// Black at the top, where the panel grows out of the hardware notch.
+    private func fadeTop(_ ctx: inout GraphicsContext, _ L: HorizonLayout) {
+        ctx.blendMode = .destinationIn
+        ctx.fill(Path(CGRect(x: 0, y: 0, width: L.width, height: L.height)), with: .linearGradient(Gradient(stops: [
+            .init(color: .black.opacity(0), location: 0),
+            .init(color: .black.opacity(0.5), location: 0.3),
+            .init(color: .black, location: 0.62)]), startPoint: .zero, endPoint: CGPoint(x: 0, y: L.height)))
+    }
+
+    /// The light that comes and goes with each breath; `SkyMotion` fades it in and out over the still sky.
+    private func drawBreath(_ ctx: inout GraphicsContext, _ L: HorizonLayout) {
+        guard let sky else { return }
+        ctx.drawLayer { layer in
+            paintBloom(&layer, L, sky, share: Self.bloomSwing)
+            paintAir(&layer, L, sky, share: Self.edgeSwing)
+            fadeTop(&layer, L)
+        }
+    }
+
+    /// The light that slides along the edge, drawn at the top of the arc; `SkyMotion` turns it about the planet's centre.
+    private func drawGlint(_ ctx: inout GraphicsContext, _ L: HorizonLayout) {
+        guard let sky else { return }
+        paintGlint(&ctx, L, sky, at: 0, strength: 0.85)
+    }
+
+    private func paintGlint(_ ctx: inout GraphicsContext, _ L: HorizonLayout, _ sky: SkyPalette, at angle: Double, strength: Double) {
+        let all = Path(CGRect(x: 0, y: 0, width: L.width, height: L.height))
+        let glint = RGB.mix(sky.limb, RGB(hex: 0xFFFFFF), 0.65).color
+        ctx.drawLayer { edge in
+            edge.fill(all, with: .radialGradient(Gradient(stops: [
+                .init(color: glint.opacity(strength), location: 0),
+                .init(color: glint.opacity(0), location: 1)]), center: L.center, startRadius: L.horizon, endRadius: L.horizon + Self.glintRise))
+            edge.blendMode = .destinationIn
+            edge.fill(all, with: .radialGradient(Gradient(colors: [.black, .black.opacity(0)]), center: L.point(angle, L.horizon + 4),
+                                                 startRadius: 0, endRadius: Self.glintReach))
+        }
+    }
+
+    /// How high above the edge the sliding light reaches, and how far along it.
+    static let glintRise = 30.0, glintReach = 120.0
+
+    /// One star of the sky, placed for a layout.
+    struct Star {
+        var at: CGPoint
+        var r: Double
+        /// Brightness at rest.
+        var a: Double
+        /// One in three twinkles, each at its own pace (seconds for a full twinkle) and out of step with the others.
+        var twinkles: Bool
+        var period: Double
+        var phase: Double
+    }
+
+    /// Stars come out away from the sun, more of them ahead (the night still to come) than behind.
+    static func stars(_ L: HorizonLayout, sun: CGPoint, starlight: Double) -> [Star] {
+        seeds.enumerated().map { i, star in
+            let x = star.x * L.width
+            let dx = x - L.center.x
+            let surface = L.center.y - (L.horizon * L.horizon - dx * dx).squareRoot()
+            let y = 34 + star.y * max(0, surface - 46)
+            let far = min(1, max(0, (hypot(x - sun.x, y - sun.y) - 120) / 380))
+            return Star(at: CGPoint(x: x, y: y), r: star.r, a: star.a * far * (x < sun.x ? 0.45 : 1) * starlight, twinkles: i % 3 == 0,
+                        period: 2.6 + 4 * (Double(i) * 0.618).truncatingRemainder(dividingBy: 1),
+                        phase: (Double(i) * 0.371).truncatingRemainder(dividingBy: 1))
         }
     }
 
@@ -529,15 +680,14 @@ struct HorizonCanvas: View {
                                                 startPoint: .zero, endPoint: bottom))
             return
         }
-        let sun = scene.sun
-        let H = L.horizon, c = L.center
-        let low = sky.low.color, bloom = sky.bloom.color, limb = sky.limb.color
-        // Motion, when a film asks for it. At rest every factor is 1.
+        let low = sky.low.color
+        // Motion, when a film asks for it. At rest every factor is 1; on the live panel `motion` hands the moving
+        // share to Core Animation, and this picture keeps what never changes.
         let t = film?.t ?? 0
         let live = film?.live ?? 0
         func wave(_ period: Double, _ phase: Double = 0) -> Double { 0.5 + 0.5 * sin(2 * .pi * (t / period + phase)) }
-        let edgeBreath = 1 - 0.28 * live * wave(7)
-        let bloomBreath = 1 - 0.14 * live * wave(7, 0.12)
+        let edgeBreath = 1 - Self.edgeSwing * (film == nil ? motion : live * wave(7))
+        let bloomBreath = 1 - Self.bloomSwing * (film == nil ? motion : live * wave(7, 0.12))
         // Gradients only, no blur: this layer is redrawn on every frame of a sliding number.
         ctx.drawLayer { layer in
             // The colour of the hour.
@@ -545,58 +695,29 @@ struct HorizonCanvas: View {
                 .init(color: low.opacity(0.10), location: 0),
                 .init(color: low.opacity(0.55), location: 0.5),
                 .init(color: low, location: 1)]), startPoint: .zero, endPoint: bottom))
-            // Light spreading from the sun on the horizon.
-            layer.fill(all, with: .radialGradient(Gradient(stops: [
-                .init(color: bloom.opacity(0.30 * bloomBreath), location: 0),
-                .init(color: bloom.opacity(0.11 * bloomBreath), location: 0.34),
-                .init(color: bloom.opacity(0), location: 1)]), center: sun, startRadius: 0, endRadius: 470))
-            // Stars come out away from the sun, more of them ahead (the night still to come) than behind.
-            // One in three twinkles, each at its own pace.
-            for (i, star) in Self.stars.enumerated() {
-                let x = star.x * L.width
-                let dx = x - c.x
-                let surface = c.y - (H * H - dx * dx).squareRoot()
-                let y = 34 + star.y * max(0, surface - 46)
-                let far = min(1, max(0, (hypot(x - sun.x, y - sun.y) - 120) / 380))
-                var a = star.a * far * (x < sun.x ? 0.45 : 1) * sky.starlight
-                var r = star.r
-                if i % 3 == 0, live > 0 {
-                    let f = wave(2.6 + 4 * (Double(i) * 0.618).truncatingRemainder(dividingBy: 1), (Double(i) * 0.371).truncatingRemainder(dividingBy: 1))
-                    a *= 1 - 0.75 * live * (1 - f)
-                    r *= 1 + 0.35 * live * f
+            paintBloom(&layer, L, sky, share: bloomBreath)
+            for star in Self.stars(L, sun: scene.sun, starlight: sky.starlight) {
+                var a = star.a, r = star.r
+                if star.twinkles {
+                    if film == nil {
+                        a *= 1 - motion
+                    } else if live > 0 {
+                        let f = wave(star.period, star.phase)
+                        a *= 1 - 0.75 * live * (1 - f)
+                        r *= 1 + 0.35 * live * f
+                    }
                 }
                 guard a > 0.03 else { continue }
-                layer.fill(Path(ellipseIn: CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r)), with: .color(.white.opacity(a)))
+                layer.fill(Path(ellipseIn: CGRect(x: star.at.x - r, y: star.at.y - r, width: 2 * r, height: 2 * r)), with: .color(.white.opacity(a)))
             }
-            // The aureole: air on the planet's edge, bright by the sun and thinning into the night. It breathes.
-            layer.drawLayer { air in
-                air.fill(all, with: .radialGradient(Gradient(stops: [
-                    .init(color: limb.opacity(0.62 * edgeBreath), location: 0),
-                    .init(color: limb.opacity(0.20 * edgeBreath), location: 0.28),
-                    .init(color: limb.opacity(0), location: 1)]), center: c, startRadius: H, endRadius: H + 58))
-                air.blendMode = .destinationIn
-                air.fill(all, with: .radialGradient(Gradient(colors: [.black, .black.opacity(0.30)]), center: sun, startRadius: 80, endRadius: 640))
-            }
+            paintAir(&layer, L, sky, share: edgeBreath)
             // Now and then a light slides along the edge, from the day behind into the night ahead.
             let cycle = t.truncatingRemainder(dividingBy: 9) / 4.5
             if live > 0, cycle < 1 {
                 let eased = cycle * cycle * (3 - 2 * cycle)
-                let at = L.point(L.minAngle - 3 + (L.maxAngle - L.minAngle + 6) * eased, H + 4)
-                let glint = RGB.mix(sky.limb, RGB(hex: 0xFFFFFF), 0.65).color
-                layer.drawLayer { edge in
-                    edge.fill(all, with: .radialGradient(Gradient(stops: [
-                        .init(color: glint.opacity(0.85 * live * sin(.pi * cycle)), location: 0),
-                        .init(color: glint.opacity(0), location: 1)]), center: c, startRadius: H, endRadius: H + 30))
-                    edge.blendMode = .destinationIn
-                    edge.fill(all, with: .radialGradient(Gradient(colors: [.black, .black.opacity(0)]), center: at, startRadius: 0, endRadius: 120))
-                }
+                paintGlint(&layer, L, sky, at: L.minAngle - 3 + (L.maxAngle - L.minAngle + 6) * eased, strength: 0.85 * live * sin(.pi * cycle))
             }
-            // Black at the top, where the panel grows out of the hardware notch.
-            layer.blendMode = .destinationIn
-            layer.fill(all, with: .linearGradient(Gradient(stops: [
-                .init(color: .black.opacity(0), location: 0),
-                .init(color: .black.opacity(0.5), location: 0.3),
-                .init(color: .black, location: 0.62)]), startPoint: .zero, endPoint: bottom))
+            fadeTop(&layer, L)
         }
         // A task finished: a meteor falls, and leaves one more star in the sky.
         let from = CGPoint(x: 668, y: 12), to = CGPoint(x: 548, y: 64)
@@ -628,7 +749,7 @@ struct HorizonCanvas: View {
     }
 
     /// Where the stars are, as fractions of the sky; the same sky every time.
-    private static let stars: [(x: Double, y: Double, r: Double, a: Double)] = {
+    private static let seeds: [(x: Double, y: Double, r: Double, a: Double)] = {
         var seed: UInt64 = 0x9E37_79B9_7F4A_7C15
         func next() -> Double {
             seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407

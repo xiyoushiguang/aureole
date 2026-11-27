@@ -20,7 +20,7 @@ final class UsageStore: ObservableObject {
     @Published private(set) var stale: Set<ProviderID> = []
     static let staleAfter: TimeInterval = 10 * 60
 
-    let history: HistoryStore
+    private(set) var history: HistoryStore
     let settings: SettingsStore
     /// Sample numbers for `--demo` and snapshots: nothing is fetched, saved or sent.
     private(set) var demo = false
@@ -109,6 +109,13 @@ final class UsageStore: ObservableObject {
             for w in snap.windows { if let p = Predictor.windowPace(w, now: snap.fetchedAt) { weekly[w.key] = p } }
             weeklyForecasts[id] = weekly
         }
+    }
+
+    /// The demo's numbers started over with another afternoon (`--tour` walks one through the four skies).
+    func reloadDemo(_ history: [ProviderSnapshot]) {
+        guard demo else { return }
+        self.history = HistoryStore(url: FileManager.default.temporaryDirectory.appendingPathComponent("aureole-demo-\(UUID().uuidString).json"))
+        loadDemo(history)
     }
 
     /// A provider that cannot be read, with its numbers gone stale; for snapshots of that state.

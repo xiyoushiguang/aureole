@@ -67,6 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
         HotKey.shared.register { [weak self] in self?.toggleHidden() }
         if launch.isDemo {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.notch?.setPinnedOpen(true) }
+            if CommandLine.arguments.contains("--tour") { runTour() }
             return
         }
         UpdateStore.shared.start { [weak self] in self?.settings.checkUpdates ?? false }
@@ -111,9 +112,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
         NSApp.mainMenu = main
     }
 
+    /// `--demo --tour`: the sample afternoon walks through the four skies on the real notch by itself — plenty
+    /// left, running short (a task finishes on the way), nearly gone, then numbers gone old — and the app quits.
+    private func runTour() {
+        let now = demoNow
+        func at(_ seconds: Double, _ work: @escaping @MainActor () -> Void) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { MainActor.assumeIsolated(work) }
+        }
+        store.reloadDemo(DemoData.usage(now: now, peak: 24))
+        at(8) { [weak self] in self?.store.reloadDemo(DemoData.usage(now: now, peak: 62)) }
+        at(14) { [weak self] in
+            let d = DemoData.sessions(now: now, notesDone: true)
+            self?.sessions.loadDemo(d.list, titles: d.titles, context: d.context, approvals: d.approvals, now: now)
+        }
+        at(20) { [weak self] in self?.store.reloadDemo(DemoData.usage(now: now, peak: 97)) }
+        at(27) { [weak self] in
+            self?.store.loadDemoTrouble(.claude, .expired(L10n.f("%@ token expired. It renews by itself the next time %@ runs.", "Claude", "Claude Code")))
+        }
+        at(34) { NSApp.terminate(nil) }
+    }
+
+    /// The moment the demo's afternoon is built around.
+    private var demoNow = Date()
+
     /// Sample numbers and sessions instead of the real ones (`--demo`).
     private func loadDemo() {
         let now = Date()
+        demoNow = now
         store.loadDemo(DemoData.usage(now: now))
         let d = DemoData.sessions(now: now)
         sessions.loadDemo(d.list, titles: d.titles, context: d.context, approvals: d.approvals, now: now)
