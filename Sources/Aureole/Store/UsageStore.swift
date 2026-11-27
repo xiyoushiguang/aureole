@@ -493,6 +493,8 @@ final class UsageStore: ObservableObject {
 
     func dispatch(_ events: [UsageEvent]) {
         guard !events.isEmpty, !demo else { return }
+        // Asked to keep names and commands to the panel: they are taken out here, before the log and every channel.
+        let events = settings.notifyHideDetails ? events.map(\.withoutDetails) : events
         persistSent()
         if let quiet = settings.quietHours, quiet.contains(Date()) {
             for event in events { AureoleLog.shared.log("event \(event.kind) held back (quiet hours): \(event.title)") }

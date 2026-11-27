@@ -152,13 +152,17 @@ struct WelcomeView: View {
 
     private func providerOK(_ id: ProviderID) -> Bool {
         if case .ok? = store.status[id] { return true }
-        return store.snapshots[id] != nil && store.status[id]?.message == nil
+        // Numbers on hand and nothing wrong. A token that ran out has no fault message, but it is not connected:
+        // it has a note saying what brings it back.
+        return store.snapshots[id] != nil && store.status[id]?.message == nil && store.status[id]?.note == nil
     }
 
     private func providerDetail(_ id: ProviderID, signIn: String) -> String {
         if providerOK(id), let w = store.snapshots[id]?.primary {
             return L10n.f("Connected · %@ used %d%%", w.displayLabel, Int(w.usedPercent.rounded()))
         }
+        // Run out, not signed out: say what renews it instead of asking for a sign-in that is not needed.
+        if let note = store.status[id]?.note { return note }
         var text = L10n.f("Sign in with `%@` in a terminal, then retry.", signIn)
         if id == .claude {
             text += " " + L10n.t("macOS will ask once whether Aureole may read the Claude Code Keychain item: choose Always Allow.")

@@ -21,7 +21,10 @@ enum Snapshotter {
                         Shot(name: "closed-stale", open: false, focus: nil,
                              trouble: (.codex, .signedOut(L10n.f("Codex token was rejected (%d). Run `codex` once to refresh your sign-in.", 401)))),
                         Shot(name: "panel-stale", open: true, focus: nil,
-                             trouble: (.codex, .expired(L10n.f("%@ token expired. It renews by itself the next time %@ runs.", "Codex", "Codex"))))]
+                             trouble: (.codex, .expired(L10n.f("%@ token expired. It renews by itself the next time %@ runs.", "Codex", "Codex")))),
+                        // The provider on the horizon itself unreadable: its headline must stop promising.
+                        Shot(name: "panel-stale-main", open: true, focus: nil,
+                             trouble: (.claude, .expired(L10n.f("%@ token expired. It renews by itself the next time %@ runs.", "Claude", "Claude Code"))))]
 
     static func run(to dir: URL, language: Language) {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

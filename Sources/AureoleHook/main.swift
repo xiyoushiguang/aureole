@@ -52,7 +52,7 @@ func main() {
 /// Claude asked a question: with panel approvals on, let the user pick an answer in Aureole. No answer in time:
 /// print nothing, and Claude shows the question in the terminal as usual.
 func offerPanelAnswer(_ event: HookEvent, session: AgentSession) {
-    let seconds = UserDefaults(suiteName: "app.aureole.Aureole")?.integer(forKey: ApprovalFiles.waitKey) ?? 0
+    let seconds = panelWaitSeconds()
     guard seconds > 0, let input = event.toolInput, let questions = ApprovalRequest.questions(from: input) else { return }
     let now = Date()
     let request = ApprovalRequest(id: event.toolUseId ?? UUID().uuidString, sessionId: event.sessionId,
@@ -68,10 +68,18 @@ func offerPanelAnswer(_ event: HookEvent, session: AgentSession) {
     }
 }
 
+/// How long to wait for a click in the panel; 0 is "do not wait". The list layout has no request cards, so with it
+/// in use there is nobody to click and waiting would only hold the terminal's own question back.
+func panelWaitSeconds() -> Int {
+    let defaults = UserDefaults(suiteName: "app.aureole.Aureole")
+    if defaults?.string(forKey: "panelLayout") == "list" { return 0 }
+    return defaults?.integer(forKey: ApprovalFiles.waitKey) ?? 0
+}
+
 /// When "approve from the panel" is on, show the request in Aureole and wait briefly for a click.
 /// No click in time: print nothing, and the agent asks in the terminal as usual.
 func offerPanelApproval(_ event: HookEvent, session: AgentSession) {
-    let seconds = UserDefaults(suiteName: "app.aureole.Aureole")?.integer(forKey: ApprovalFiles.waitKey) ?? 0
+    let seconds = panelWaitSeconds()
     guard seconds > 0, let tool = event.toolName else { return }
     let now = Date()
     let suggestions = event.permissionSuggestions

@@ -29,7 +29,10 @@ final class SessionStore: ObservableObject {
     let settings: SettingsStore
     /// Where wait/done alerts go; the app points this at the usage store's channels.
     var onEvents: (([UsageEvent]) -> Void)?
-    private var alerts = SessionAlerts(waitingAfter: 120, announceDone: true)
+    /// What has been announced is kept across launches: starting again within the ten minutes a finish stays
+    /// news used to say "done" a second time.
+    private var alerts = SessionAlerts(waitingAfter: 120, announceDone: true,
+                                       sent: Set(UserDefaults.standard.stringArray(forKey: "announcedSessions") ?? []))
     /// Finished sessions you have looked at: session id → the finish time you saw. Kept across launches.
     private var seen: [String: Double] = UserDefaults.standard.dictionary(forKey: "seenSessions") as? [String: Double] ?? [:]
     private let directory = SessionFiles.directory
@@ -132,7 +135,9 @@ final class SessionStore: ObservableObject {
                 try? FileManager.default.removeItem(at: SessionFiles.url(for: s.sessionId, in: directory))
                 continue
             }
-            live.append(s)
+            // With excerpts switched off, the ones kept earlier are not shown or used as names either. A script's
+            // lane is named by the script, not by a prompt.
+            live.append(settings.sessionPromptPreview || s.provider == .task ? s : s.withoutPrompts)
         }
         let newBoard = SessionBoard.build(live, now: now, alive: { _ in true }, seen: { [seen] s in
             seen[s.sessionId].map { abs($0 - s.stateSince.timeIntervalSince1970) < 1 } ?? false
@@ -157,6 +162,7 @@ final class SessionStore: ObservableObject {
         if reported != contextReported { contextReported = reported }
         alerts.waitingAfter = settings.notifyWaitingMinutes > 0 ? TimeInterval(settings.notifyWaitingMinutes * 60) : nil
         alerts.announceDone = settings.notifyDone
+        let announced = alerts.sent
         let events = alerts.check(newBoard, now: now, name: name(of:), silent: { [muted] s in
             if muted.contains(s.sessionId) { return true }
             if Presence.isWatching(s) {
@@ -165,6 +171,7 @@ final class SessionStore: ObservableObject {
             }
             return false
         })
+        if alerts.sent != announced { UserDefaults.standard.set(Array(alerts.sent), forKey: "announcedSessions") }
         if !events.isEmpty { onEvents?(events) }
     }
 

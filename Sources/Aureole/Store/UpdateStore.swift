@@ -139,15 +139,11 @@ enum Updater {
         return staged
     }
 
-    /// A small script waits for this process to quit, moves the old copy to the Trash, puts the new one in its
-    /// place and opens it.
+    /// A small script waits for this process to quit, puts the new copy in the old one's place (the old one goes
+    /// to the Trash) and opens the app. See `UpdateSwap` for what it does when the copying fails.
     static func swapAndRelaunch(staged: String, currentApp: String, version: String) throws {
         let trash = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash/Aureole \(version) \(Int(Date().timeIntervalSince1970)).app").path
-        let script = """
-        while kill -0 \(getpid()) 2>/dev/null; do sleep 0.2; done
-        mv "$1" "$3" && /usr/bin/ditto "$2" "$1" && /usr/bin/xattr -dr com.apple.quarantine "$1" 2>/dev/null
-        if [ -d "$1" ]; then /usr/bin/open "$1"; else mv "$3" "$1"; /usr/bin/open "$1"; fi
-        """
+        let script = UpdateSwap.script(waitingFor: getpid())
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
         p.arguments = ["-c", script, "aureole-update", currentApp, staged, trash]

@@ -137,7 +137,7 @@ struct ProvidersTab: View {
         case .ok?: text = L10n.t("Connected") + (store.snapshots[id]?.planLabel.map { " · \($0)" } ?? "")
         case .loading?: text = L10n.t("Loading…")
         case .rateLimited?: text = L10n.t("Rate limited")
-        case .signedOut(let m)?, .error(let m)?: text = m
+        case .signedOut(let m)?, .error(let m)?, .expired(let m)?: text = m
         default: text = settings.isEnabled(id) ? L10n.t("Waiting…") : L10n.t("Off")
         }
         return LabeledContent(L10n.t("Status")) { Text(text).foregroundStyle(.secondary).textSelection(.enabled) }
@@ -219,6 +219,9 @@ struct SessionsTab: View {
                     ForEach([1, 2, 5, 10], id: \.self) { Text(L10n.f("after %d min", $0)).tag($0) }
                 }
                 Toggle(L10n.t("Notify when a task is done"), isOn: $settings.notifyDone)
+                Toggle(L10n.t("Leave session names and commands out of notifications"), isOn: $settings.notifyHideDetails)
+                Text(L10n.t("Notifications then say only which agent is waiting or done. Applies to macOS notifications and every channel."))
+                    .font(.caption).foregroundStyle(.secondary)
                 Picker(L10n.t("Approve requests from the panel"), selection: $settings.approveFromPanelSeconds) {
                     Text(L10n.t("Off")).tag(0)
                     ForEach([15, 30, 60], id: \.self) { Text(L10n.f("wait up to %d s", $0)).tag($0) }
@@ -226,6 +229,13 @@ struct SessionsTab: View {
                 .onChange(of: settings.approveFromPanelSeconds) { _, v in if v > 0 { sessions.refreshHookTimeouts() } }
                 Text(L10n.t("Hover a waiting session to see the full request and choose Allow once or Deny, or pick an answer when Claude asks a question. When Claude Code itself offers a standing rule, \"Always allow\" adds exactly that rule, named on the button. Nothing is ever allowed without a click. While Aureole waits, the terminal prompt is held back; if you do not answer in time, it appears as usual."))
                     .font(.caption).foregroundStyle(.secondary)
+                Text(L10n.t("Your click reaches the agent through a folder only your account can open. Other programs running under your account can write there too, so turning this on trusts them."))
+                    .font(.caption).foregroundStyle(.secondary)
+                if settings.approveFromPanelSeconds > 0, settings.panelLayout == .list {
+                    Label(L10n.t("The list layout has no request cards: while it is in use, requests are not held back and the terminal asks at once."),
+                          systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.orange)
+                }
                 Text(L10n.t("Uses the same channels as usage alerts (macOS notification, WeChat, etc.)."))
                     .font(.caption).foregroundStyle(.secondary)
             }

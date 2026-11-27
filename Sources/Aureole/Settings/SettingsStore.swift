@@ -60,6 +60,8 @@ final class SettingsStore: ObservableObject {
     /// Minutes a session may wait on you before a notification goes out; 0 turns it off.
     @Published var notifyWaitingMinutes: Int { didSet { defaults.set(notifyWaitingMinutes, forKey: "notifyWaitingMinutes") } }
     @Published var notifyDone: Bool { didSet { defaults.set(notifyDone, forKey: "notifyDone") } }
+    /// Notifications about sessions say which agent and what state, without the session's name or its command.
+    @Published var notifyHideDetails: Bool { didSet { defaults.set(notifyHideDetails, forKey: "notifyHideDetails") } }
     /// Ask GitHub once a day whether a newer release is out.
     @Published var checkUpdates: Bool { didSet { defaults.set(checkUpdates, forKey: "checkUpdates") } }
     /// Seconds a permission request waits for a click in the panel before the terminal asks; 0 = off.
@@ -103,6 +105,7 @@ final class SettingsStore: ObservableObject {
         panelLayout = PanelLayout(rawValue: d.string(forKey: "panelLayout") ?? "") ?? .horizon
         notifyWaitingMinutes = d.object(forKey: "notifyWaitingMinutes") as? Int ?? 2
         notifyDone = d.object(forKey: "notifyDone") as? Bool ?? true
+        notifyHideDetails = d.object(forKey: "notifyHideDetails") as? Bool ?? false
         checkUpdates = d.object(forKey: "checkUpdates") as? Bool ?? true
         approveFromPanelSeconds = d.object(forKey: ApprovalFiles.waitKey) as? Int ?? 0
         ambientMotion = d.object(forKey: "ambientMotion") as? Bool ?? true

@@ -17,7 +17,8 @@ struct HorizonInputs {
         let main = enabled.first { store.snapshots[$0]?.primary != nil } ?? enabled.first ?? .claude
         self.main = main
         window = store.snapshots[main]?.primary
-        prediction = store.predictions[main]
+        // A forecast drawn from a number that could not be refreshed would still look like a promise: none is made.
+        prediction = store.stale.contains(main) ? nil : store.predictions[main]
         samples = window.map { store.history.samples(provider: main, key: $0.key) } ?? []
         side = enabled.first { $0 != main }
     }
@@ -930,7 +931,7 @@ struct SessionCard: View {
                     HStack(spacing: 6) {
                         Text(L10n.t("Always allow")).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Theme.amber)
                         Text(rule).font(.system(size: 11, design: .monospaced)).foregroundStyle(.white.opacity(0.8))
-                            .lineLimit(1).truncationMode(.middle)
+                            .lineLimit(1).truncationMode(.middle).help(rule)
                     }
                     .padding(.horizontal, 12).frame(height: 26)
                     .overlay(Capsule().stroke(Theme.amber.opacity(0.6), lineWidth: 1))
@@ -1086,26 +1087,40 @@ struct HorizonHeadlineView: View {
         case .fine: inputs.main == .claude ? HorizonColor.claudeBright : HorizonColor.codexBright
         case .unknown: .white.opacity(0.9)
         }
-        VStack(alignment: .leading, spacing: 3) {
-            Text(h.title)
-                .contentTransition(.numericText())
-                .animation(.snappy, value: h.title)
-                .font(.system(size: h.tone == .warning ? 32 : 24, weight: .bold).monospacedDigit())
-                .foregroundStyle(color)
-            if let sub = h.subtitle {
-                // The numbers line carries the window's API-price value; it is the subtitle when all is fine.
-                Text(sub + (h.detail == nil ? costSuffix : "")).font(.system(size: 12.5).monospacedDigit()).foregroundStyle(.white.opacity(0.86))
+        // A number that could not be refreshed for a while promises nothing: no "lasts until", no "runs out at".
+        // What it was, greyed with a question mark like the number on the right, and under it why it is old.
+        if store.stale.contains(inputs.main), let w = inputs.window {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(inputs.main.displayName + " " + HorizonHeadline.windowName(w) + " " + Formatting.percent(w.usedPercent) + "?")
+                    .font(.system(size: 24, weight: .bold).monospacedDigit())
+                    .foregroundStyle(Color.white.opacity(0.45))
+                Text(L10n.t("old number") + (status.message ?? status.note).map { " · " + $0 }.orEmpty)
+                    .font(.system(size: 11.5)).lineLimit(2)
+                    .foregroundStyle(status.message == nil ? HorizonColor.label : Theme.amber)
+                    .frame(maxWidth: 420, alignment: .leading)
             }
-            if let d = h.detail {
-                Text(d + costSuffix).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(HorizonColor.label)
-                    .help(windowCost == nil ? "" : L10n.t("At public API prices. With a subscription this is what the work would have cost, not what you paid."))
+        } else {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(h.title)
+                    .contentTransition(.numericText())
+                    .animation(.snappy, value: h.title)
+                    .font(.system(size: h.tone == .warning ? 32 : 24, weight: .bold).monospacedDigit())
+                    .foregroundStyle(color)
+                if let sub = h.subtitle {
+                    // The numbers line carries the window's API-price value; it is the subtitle when all is fine.
+                    Text(sub + (h.detail == nil ? costSuffix : "")).font(.system(size: 12.5).monospacedDigit()).foregroundStyle(.white.opacity(0.86))
+                }
+                if let d = h.detail {
+                    Text(d + costSuffix).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(HorizonColor.label)
+                        .help(windowCost == nil ? "" : L10n.t("At public API prices. With a subscription this is what the work would have cost, not what you paid."))
+                }
+                if inputs.window == nil || status.message != nil || status.note != nil {
+                    Text(placeholder(status)).font(.system(size: 11))
+                        .foregroundStyle(status.message == nil ? HorizonColor.label : Theme.amber).lineLimit(2)
+                }
             }
-            if inputs.window == nil || status.message != nil || status.note != nil {
-                Text(placeholder(status)).font(.system(size: 11))
-                    .foregroundStyle(status.message == nil ? HorizonColor.label : Theme.amber).lineLimit(2)
-            }
+            .lineLimit(1)
         }
-        .lineLimit(1)
     }
 
     /// " · ≈$22 at API prices", or nothing.
@@ -1177,6 +1192,10 @@ struct SideNumber: View {
             return line
         }
     }
+}
+
+private extension Optional where Wrapped == String {
+    var orEmpty: String { self ?? "" }
 }
 
 private struct RequestHeightKey: PreferenceKey {
