@@ -70,7 +70,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
         if !UserDefaults.standard.bool(forKey: "welcomeShown") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.openWelcome() }
         }
-        installDebugCommands()
+        // Only when started for development: these change the agents' own settings files, and a notification can
+        // be posted by any program on this Mac.
+        if CommandLine.arguments.contains("--dev") { installDebugCommands() }
     }
 
     /// History and ledger are saved every few minutes, not on every reading; what is still only in memory is
@@ -117,6 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppActions {
     }
 
     /// `scripts/dev-cmd.sh open|close|refresh|hooks-install|hooks-remove` posts these; handy for screenshots and tests.
+    /// Listened for only when the app was started with `--dev` (`scripts/run.sh` does).
     private func installDebugCommands() {
         let center = DistributedNotificationCenter.default()
         for (name, action) in [("app.aureole.open", { [weak self] in self?.notch?.setPinnedOpen(true) }),

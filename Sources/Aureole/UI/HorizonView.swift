@@ -1172,12 +1172,9 @@ struct SideNumber: View {
         let forecasts = store.weeklyForecasts[inputs.main] ?? [:]
         return snap.windows.compactMap { w in
             guard w.key != inputs.window?.key, (w.duration ?? 0) >= Predictor.longWindow, !w.isSpend else { return nil }
-            let p = forecasts[w.key]
-            let warning = p?.exhaustsBeforeReset == true
-            guard w.kind == .sevenDay || warning else { return nil }
-            var text = inputs.main.displayName + " " + HorizonHeadline.windowName(w) + " " + Formatting.percent(w.usedPercent)
-            if warning, let at = p?.exhaustAt { text += " · " + L10n.f("runs out %@", HorizonHeadline.when(at, now: Date())) }
-            return (text, warning)
+            let line = HorizonHeadline.weeklyLine(provider: inputs.main, window: w, prediction: forecasts[w.key])
+            guard w.kind == .sevenDay || line.warning else { return nil }
+            return line
         }
     }
 }

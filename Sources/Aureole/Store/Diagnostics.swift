@@ -42,7 +42,8 @@ enum Diagnostics {
         let hits = text.split(separator: "\n").filter { line in
             !line.contains("event session") && keys.contains { line.localizedCaseInsensitiveContains($0) }
         }
-        return hits.isEmpty ? ["(none)"] : hits.suffix(limit).map(String.init)
+        // An error message can quote a path; the home folder's path has the account name in it.
+        return hits.isEmpty ? ["(none)"] : hits.suffix(limit).map { PrivateText.withoutHome(String($0)) }
     }
 
     static func copy() {

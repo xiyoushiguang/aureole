@@ -98,8 +98,33 @@ public enum DateParsing {
     }
 
     private static func fromEpoch(_ v: Double) -> Date? {
-        guard v > 0 else { return nil }
-        return Date(timeIntervalSince1970: v > 1e11 ? v / 1000 : v)
+        guard v.isFinite, v > 0 else { return nil }
+        let seconds = v > 1e11 ? v / 1000 : v
+        // Nothing an agent logs is dated before 2001 or after 2100. A number outside that is not a time, and one
+        // large enough (1e100 is a legal JSON number) would crash whoever turns the date into whole minutes.
+        guard seconds >= 978_307_200, seconds <= 4_102_444_800 else { return nil }
+        return Date(timeIntervalSince1970: seconds)
+    }
+}
+
+/// Text handed to AppleScript. A folder may be called anything, quotes and line breaks included; pasted into a
+/// script as it is, such a name ends the string early and what follows it runs as code.
+public enum AppleScriptText {
+    /// `text` as a string literal: between double quotes, with the two characters that could end it escaped.
+    public static func literal(_ text: String) -> String {
+        "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
+    }
+
+    /// A terminal device as the system names them ("ttys005"). Anything else is not put in a script at all.
+    public static func isDeviceName(_ tty: String) -> Bool {
+        !tty.isEmpty && tty.count <= 32 && tty.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
+    }
+}
+
+/// What may leave the machine in a copied diagnosis: the home folder's path carries the account name.
+public enum PrivateText {
+    public static func withoutHome(_ text: String, home: String = NSHomeDirectory()) -> String {
+        home.count > 1 ? text.replacingOccurrences(of: home, with: "~") : text
     }
 }
 
@@ -116,10 +141,15 @@ public final class AureoleLog: @unchecked Sendable {
     public var previousURL: URL { url.appendingPathExtension("1") }
 
     private convenience init() {
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Logs/Aureole", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let fm = FileManager.default
+        let dir = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Aureole", isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         self.init(url: dir.appendingPathComponent("aureole.log"))
+        // The log names sessions and folders: for this account only, including what earlier versions left open.
+        try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+        for file in [url, previousURL] where fm.fileExists(atPath: file.path) {
+            try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        }
     }
 
     init(url: URL, maxBytes: UInt64 = 1_000_000) {
@@ -146,14 +176,19 @@ public final class AureoleLog: @unchecked Sendable {
                 try? h.close()
                 try? fm.removeItem(at: previousURL)
                 try? fm.moveItem(at: url, to: previousURL)
-                try? line.data(using: .utf8)?.write(to: url)
+                start(line)
                 return
             }
             h.write(line.data(using: .utf8)!)
             try? h.close()
         } else {
-            try? line.data(using: .utf8)?.write(to: url)
+            start(line)
         }
+    }
+
+    /// A new log file, readable by this account only.
+    private func start(_ line: String) {
+        FileManager.default.createFile(atPath: url.path, contents: line.data(using: .utf8), attributes: [.posixPermissions: 0o600])
     }
 }
 

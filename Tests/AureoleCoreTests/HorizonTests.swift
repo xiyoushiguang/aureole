@@ -116,6 +116,30 @@ final class HorizonTests: XCTestCase {
         XCTAssertTrue(fine.title.hasPrefix("Lasts until the "))
     }
 
+    func testWeeklyLineSaysWhenItResets() {
+        L10n.language = .english
+        let reset = now.addingTimeInterval(3 * 86400)
+        let week = UsageWindow(key: "seven_day", label: "Week", kind: .sevenDay, usedPercent: 41, resetsAt: reset, duration: 7 * 86400)
+        let fine = HorizonHeadline.weeklyLine(provider: .claude, window: week, prediction: nil, now: now)
+        XCTAssertFalse(fine.warning)
+        XCTAssertEqual(fine.text, "Claude weekly 41% · " + HorizonHeadline.when(reset, now: now) + " reset")
+        // Running out first: that time comes before the reset.
+        let out = now.addingTimeInterval(86400)
+        let short = HorizonHeadline.weeklyLine(provider: .claude, window: week,
+                                               prediction: Prediction(ratePerHour: 2.5, exhaustAt: out, resetsAt: reset, basedOnMinutes: 600), now: now)
+        XCTAssertTrue(short.warning)
+        XCTAssertEqual(short.text, "Claude weekly 41% · runs out " + HorizonHeadline.when(out, now: now) + " · " + HorizonHeadline.when(reset, now: now) + " reset")
+        // A reset already behind us is an old reading: nothing is said about it. Nor when none is known.
+        let old = UsageWindow(key: "seven_day", label: "Week", kind: .sevenDay, usedPercent: 41, resetsAt: now.addingTimeInterval(-60), duration: 7 * 86400)
+        XCTAssertEqual(HorizonHeadline.weeklyLine(provider: .claude, window: old, prediction: nil, now: now).text, "Claude weekly 41%")
+        let unknown = UsageWindow(key: "seven_day", label: "Week", kind: .sevenDay, usedPercent: 41, resetsAt: nil, duration: 7 * 86400)
+        XCTAssertEqual(HorizonHeadline.weeklyLine(provider: .claude, window: unknown, prediction: nil, now: now).text, "Claude weekly 41%")
+        L10n.language = .chineseSimplified
+        XCTAssertEqual(HorizonHeadline.weeklyLine(provider: .claude, window: week, prediction: nil, now: now).text,
+                       "Claude 本周 41% · " + HorizonHeadline.when(reset, now: now) + " 重置")
+        L10n.language = .english
+    }
+
     func testContextGauge() {
         XCTAssertEqual(ContextGauge.fraction(tokens: 100_000), 0.5)
         XCTAssertEqual(ContextGauge.fraction(tokens: 489_000), 0.489)

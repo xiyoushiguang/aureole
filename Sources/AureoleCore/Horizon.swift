@@ -355,6 +355,17 @@ public struct HorizonHeadline: Equatable, Sendable {
         }
     }
 
+    /// One line for a long window that is not the one on the horizon: how much of it is used and when it resets,
+    /// with when it runs out in front if that comes first. "Claude weekly 41% · Mon 04:59 reset".
+    public static func weeklyLine(provider: ProviderID, window w: UsageWindow, prediction p: Prediction?, now: Date = Date()) -> (text: String, warning: Bool) {
+        let warning = p?.exhaustsBeforeReset == true
+        var text = provider.displayName + " " + windowName(w) + " " + Formatting.percent(w.usedPercent)
+        if warning, let at = p?.exhaustAt { text += " · " + L10n.f("runs out %@", when(at, now: now)) }
+        // A reset that has already passed belongs to an old reading: it says nothing about the next one.
+        if let reset = w.resetsAt, reset > now { text += " · " + L10n.f("%@ reset", when(reset, now: now)) }
+        return (text, warning)
+    }
+
     /// "5h" / "weekly" in words.
     public static func windowName(_ w: UsageWindow) -> String {
         switch w.kind {
