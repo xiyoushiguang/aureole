@@ -129,7 +129,7 @@ public enum L10n {
         "Too late: the terminal is already asking. Answer it there.": "晚了一步：终端里已经在问了，请到终端处理。",
         "Allowed. %@ carries on.": "已允许，%@ 继续执行。", "Denied. %@ was told no.": "已拒绝，已告知 %@。",
         "Esc closes the panel": "按 Esc 收起面板", "Needs Accessibility": "需要辅助功能权限", "Allow…": "授权…",
-        "Ambient motion (breathing glow, flowing forecast)": "环境动效（光带呼吸、预测线流动）",
+        "Ambient motion (the sky, breathing glow, flowing forecast)": "环境动效（天空、光带呼吸、预测线流动）",
         "Off automatically when macOS is set to reduce motion.": "macOS 开启「减少动态效果」时自动关闭。",
         "working": "干活中", "Last: %@": "上次：%@", "Panel layout": "面板样式", "Horizon": "晨昏线", "List": "列表", "Session tracking is off.": "会话跟踪已关闭。",
         "Context %% is an estimate (200k or 1M window).": "上下文百分比是估算（按 20 万或 100 万窗口）。",

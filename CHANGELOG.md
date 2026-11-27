@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.0 — 2026-11-27
+
+- **The sky takes the quota's colour.** The panel's background was close to black. It is now a sky over
+  the planet's edge that says how the window is going before any number is read: deep blue while there
+  is plenty, dusk when it will run out before the reset (or from 80% used), embers from 95%, grey when
+  the numbers could not be refreshed. One sky eases into the next over about a second and a half.
+- **And it moves.** One star in three twinkles, the light on the planet's edge breathes, a light slides
+  along the horizon every nine seconds, and a task that finishes drops a meteor that leaves a star (up
+  to 24, until the app quits). With old numbers everything stands still. The motion runs on Core
+  Animation layers and the app draws nothing per frame; measured with the panel open, it costs at most
+  about one percent of one CPU core. "Ambient motion" in Settings turns it off, and Reduce Motion is
+  respected.
+- For development: `--film <dir>` draws the panel frame by frame into images for a video, and
+  `--demo --tour` walks the sample data through the four skies on the real notch.
+
 ## 0.7.5 — 2026-11-27
 
 Fixes from an outside review of 0.7.4, security first, and the weekly reset time.

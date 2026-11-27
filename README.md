@@ -9,10 +9,17 @@ you have left, and what each of your Claude Code sessions is doing, right where 
 are. Closed, two arcs of light hug the notch, one per provider, shrinking as the current window
 drains. Hover, and the panel drops down:
 
-![Aureole: the closed notch, the panel, and a permission request answered from the panel (sample data)](docs/demo.gif)
+![Aureole's panel: the quota on the horizon, under a sky that takes its colour, and one lane per session (sample data)](docs/screenshots/horizon.png)
+
+![The closed notch, the panel, and a permission request answered from the panel (sample data; recorded before 0.8, when the sky was still plain)](docs/demo.gif)
 
 **How to read it.** Time runs left to right along the edge of a planet, with **now** at the white
 sun.
+
+- **The sky says how it is going**, before any number is read: deep blue while there is plenty, dusk
+  when the window will run out before its reset, embers past 95%, grey when the numbers are old. One
+  star in three twinkles, the light on the planet's edge breathes, and a task that finishes drops a
+  meteor that leaves a star. "Ambient motion" in Settings turns the motion off.
 
 - **The arc is your quota.** The orange curve rising off the horizon is how much of the current
   window you have used; the dashed line is where the current pace takes you; the faint line is

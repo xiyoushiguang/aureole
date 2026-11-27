@@ -75,7 +75,7 @@ struct GeneralTab: View {
             LabeledContent(L10n.t("Hide or show Aureole")) {
                 Text(HotKey.display).font(.system(.body, design: .rounded)).foregroundStyle(.secondary)
             }
-            Toggle(L10n.t("Ambient motion (breathing glow, flowing forecast)"), isOn: $settings.ambientMotion)
+            Toggle(L10n.t("Ambient motion (the sky, breathing glow, flowing forecast)"), isOn: $settings.ambientMotion)
             Text(L10n.t("Off automatically when macOS is set to reduce motion."))
                 .font(.caption).foregroundStyle(.secondary)
             Button(L10n.t("Open the welcome guide…")) { openWelcome() }
