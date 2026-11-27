@@ -258,7 +258,7 @@ struct HorizonPanel: View {
                                  prediction: inputs.prediction, sessions: board, weights: weights)
         let s = width / scene.layout.width
         let mood = SkyMood.enabled
-            ? SkyMood(window: inputs.window, stale: store.stale.contains(inputs.main), runsDry: scene.dryFrom != nil) : nil
+            ? SkyMood(window: inputs.window, stale: store.stale.contains(inputs.main), runsDry: scene.dryFrom != nil || inputs.prediction?.exhaustsBeforeReset == true) : nil
         let sky = mood.map { film?.palette ?? $0.palette }
         let ambient = settings.ambientMotion && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         // The sky moves while the numbers are live; with old numbers it stands still.

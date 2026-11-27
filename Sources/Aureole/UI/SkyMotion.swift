@@ -103,6 +103,8 @@ final class SkyMotionView: NSView {
     /// Finishes already answered with a meteor or a quiet star; nil until the panel's first look.
     private var answered: Set<String>?
     private var fallenShown: Set<String> = []
+    /// The star each finish left, so one that drops off the list leaves the sky too.
+    private var fallenStars: [String: CALayer] = [:]
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -418,14 +420,24 @@ final class SkyMotionView: NSView {
             let isNews = !first || Date().timeIntervalSince(since) < SessionLight.fresh || Self.pose != nil
             if isNews && running && news.count < 3 { news.append(entry) } else { land(entry, after: nil) }
         }
-        answered = seen
+        // Only what is still showing as finished needs remembering; the rest cannot come round again.
+        let showing = Set(done.map { "\($0.key)|\(Int($0.value.timeIntervalSince1970))" })
+        answered = seen.intersection(showing)
         for (i, entry) in news.enumerated() { fall(entry, after: 0.25 + 0.45 * Double(i)) }
+        // The list keeps the newest stars only: the ones it let go leave the sky as well.
+        let kept = Set(FallenStars.all.map(\.key))
+        for (key, star) in fallenStars where !kept.contains(key) {
+            star.removeFromSuperlayer()
+            fallenStars[key] = nil
+            fallenShown.remove(key)
+        }
     }
 
     /// The stars already in the sky when the layers are laid out.
     private func placeFallen() {
         fallen.sublayers?.forEach { $0.removeFromSuperlayer() }
         fallenShown = []
+        fallenStars = [:]
         for e in FallenStars.all { land(e, after: nil) }
     }
 
@@ -442,6 +454,7 @@ final class SkyMotionView: NSView {
         star.position = at
         star.opacity = 0.95
         fallen.addSublayer(star)
+        fallenStars[entry.key] = star
         if let delay {
             let begin = fallen.convertTime(CACurrentMediaTime(), from: nil) + delay
             let o = CABasicAnimation(keyPath: "opacity")
